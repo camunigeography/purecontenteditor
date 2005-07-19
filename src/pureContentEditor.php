@@ -1,53 +1,21 @@
 <?php
 
 /**
- * A class to create an editing facility on top of a pureContent-enabled site
+ * An class to create an editing facility on top of a pureContent-enabled site
  * 
  * @package pureContentEditor
  * @license	http://opensource.org/licenses/gpl-license.php GNU Public License
  * @author	{@link http://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-5
  * @author  {@link http://www.lucas-smith.co.uk/ Martin Lucas-Smith}
- * @version 1.00
+ * @version 1.01
  * 
  * REQUIREMENTS:
- * - This is a PHP5 application; it will not work with earlier versions of PHP
- * - PHP5 should ideally have the Tidy extension compiled/loaded
+ * - PHP should ideally have the Tidy extension compiled/loaded
  * - Uses the FCKeditor DHTML component - www.fckeditor.net - to provide the richtext field; browser compatibility subject to FCKeditor requirements
  * - Requires libraries application.php, csv.php, directories.php, pureContent.php and ultimateForm.php, all available from http://download.geog.cam.ac.uk/
  * - Assumes that the server will supply a username - e.g. using AuthType or the University of Cambridge's Raven service
- * - Required mod_rewrite enabled in Apache
+ * - Requires mod_rewrite enabled in Apache
  */
-
-/*
-
-The following source code alterations must be made to FCKeditor 2.0 RC3
-
-1. Customised configurations which cannot go in the PHP at present
-Add the supplied file /_fckeditor/fckconfig-customised.js
-
-2. https://sourceforge.net/forum/forum.php?thread_id=1167412&forum_id=257180 In files fckeditorcode_ie_2.js and fckeditorcode_gecko_2.js (in the /js/ folder)
-Inline-comment out the inline-code:
-html=html.replace(re,"<div$2</div>");
-
-3. In connector.php add, after the opening include() lines
-#MLS# Ensure $_GET['CurrentFolder'] in connector.php is not vulnerable to ../ attacks
-$_GET['CurrentFolder'] = str_replace (array ('../', '..\\'), '', $_GET['CurrentFolder']);
-#MLS# Fix down the user user files path
-$Config['UserFilesPath'] = '/';
-
-4. In io.php: add at the start of GetUrlFromPath() the line:
-#MLS# Don't differentiate locations based on the resource type
-$resourceType = '';
-
-5. In io.php: add at the start of ServerMapFolder() the line:
-#MLS# Don't differentiate locations based on the resource type
-$resourceType = '';
-
-6. In io.php: add at the start of GetRootPath() the line:
-#MLS# Return the document root instead of (incorrectly) trying to work it out
-return $_SERVER['DOCUMENT_ROOT'];
-
-*/
 
 
 # Create a class which adds editing functions to the pureContent framework
@@ -91,7 +59,8 @@ class pureContentEditor
 	);
 	
 	# Specify the minimum version of PHP required
-	var $minimumPhpVersion = '5.0.0';
+	#!# Need to audit this
+	var $minimumPhpVersion = '4.3.0';
 	
 	
 	# Constructor
@@ -259,7 +228,7 @@ class pureContentEditor
 					return false;
 				}
 			}
-			if (!$this->directoryIsWritable ($this->filestoreRoot)) {
+			if (!application::directoryIsWritable ($this->filestoreRoot)) {
 				$setupErrors[] = 'It is not currently possible to write files to the filestore. The administrator needs to ensure the directory exists and fix the permissions first.';
 			}
 		}
@@ -513,7 +482,7 @@ class pureContentEditor
 		# List replacements
 		$replacements = array (
 			" src=\"{$this->editSiteUrl}/"	=> ' src="/',			// Ensure images are not prefixed with the current site's URL
-			' src="([^/])'				=> ' src="' . $this->currentDirectory . '\\1',		// Ensure all images are absolute
+			' src="([^/|http://|https://])'				=> ' src="' . $this->currentDirectory . '\\1',		// Ensure all images are absolute
 		);
 		
 		# Replacement of image class with a similarly-named align attribute (this is then reversed afterwards - this is so that the DHTML editor picks up the alignment correctly
@@ -2529,8 +2498,8 @@ class pureContentEditor
 		}
 		
 		# Check that the live directory is writable before offering options
-		if (!$this->directoryIsWritable ($this->liveSiteRoot, $this->currentDirectory)) {
-			$this->reportErrors ('It is not currently possible to write files to the live site. The administrator needs to fix the permissions first.');
+		if (!application::directoryIsWritable ($this->liveSiteRoot, $this->currentDirectory)) {
+			$this->reportErrors ('It is not currently possible to write files to the live site. The administrator needs to fix the permissions first.', "The folder in question is {$this->liveSiteRoot}{$this->currentDirectory} on the live site.");
 			return false;
 		}
 		
@@ -2666,6 +2635,7 @@ class pureContentEditor
 		# Install the new file on the live site
 		if (!$installNewFileResult = application::createFileFromFullPath ($newFileLiveLocationFromRoot, $contents, $addStamp = false)) {
 			$this->reportErrors ('There was a problem installing the approved file on the live site.', "This new file would have been at $newFileLiveLocation on the live site.");
+			return false;
 		}
 		$this->logChange (($directly ? 'New page directly' : "Submitted file $submittedFile approved and") . " saved to $newFileLiveLocation on live site");
 		echo "<p class=\"success\">The file has been approved and is now online, at: <a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$newFileLiveLocation}\">{$this->liveSiteUrl}{$newFileLiveLocation}</a>.</p>";
@@ -2689,37 +2659,6 @@ class pureContentEditor
 		
 		# Return the cached result
 		return ($installNewFileResult);
-	}
-	
-	
-	# Function to check whether an area is writable; provides facilities additional to is_writable
-	function directoryIsWritable ($root, $location = '/')
-	{
-		# If there is a trailing slash, remove it
-		if (substr ($location, -1) == '/') {$location = substr ($location, 0, -1);}
-		
-		# Split the directories up
-		$directories = explode ('/', $location);
-		
-		# Loop through the directories while a list exist
-		while (count ($directories)) {
-			
-			# Re-compile the location
-			$directory = $root . implode ('/', $directories);
-			
-			# If the directory exists, test for its writability
-			if (is_dir ($directory)) {
-				if (is_writable ($directory)) {
-					return true;
-				}
-			}
-			
-			# Remove the last directory in the list
-			array_pop ($directories);
-		}
-		
-		# Otherwise return false
-		return false;
 	}
 	
 	
@@ -2894,10 +2833,10 @@ class pureContentEditor
 	function submissions ($excludeTemplateFiles = false)
 	{
 		# Determine whether to exclude files the size of the template
-		$excludeFilesOfSize = ($excludeTemplateFiles ? strlen ($this->newPageTemplate) : false);
+		$excludeFileTemplate = ($excludeTemplateFiles ? $this->newPageTemplate : false);
 		
 		# Get the file listing, excluding files the size of the template (in theory this may catch others, but in practice this is good enough - adding an md5() check would require opening all files and would reduce performance
-		$files = directories::flattenedFileListing ($this->filestoreRoot, array (), $includeRoot = false, $excludeFilesOfSize);
+		$files = directories::flattenedFileListing ($this->filestoreRoot, array (), $includeRoot = false, $excludeFileTemplate);
 		
 		# Filter and organise the file listing
 		$files = $this->submissionsFiltered ($files);
@@ -3018,6 +2957,13 @@ class pureContentEditor
 #!# When doing include (), do a check first for the type of file; if a text file, just do a file_get_contents surround with <pre />
 #!# Add an archiveStoreRoot for .old files
 #!# Prevent creation of a permission when a more wide-ranging one exists
+#!# Explicitly state username
+#!# Remove 'you will be informed of permissions' in administrator account creation e-mail
+#!# Dear Martin, Mike, Dan, => Dear Martin, Mike and Dan,
+#!#  target="_blank" appearing twice if previously there
+#!# "The file you submitted, /index.html , on" -> "The file you submitted, PAGETITLE , on"
+#!# 'View live version' of page button
+#!# Option not to mail yourself when you approve your own page and you are the only administrator
 
 
 ### Potential future development suggestions:
@@ -3039,5 +2985,7 @@ class pureContentEditor
 # Find some way to enable browsing of /foo/bar/[no index.html] where that is a new directory that does not exist on the live site - maybe a mod_rewrite change
 # Renaming on making live
 # More control over naming - moving regexp into the settings but disallow _ at the start
+# Groups facility
+
 
 ?>
