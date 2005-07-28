@@ -7,7 +7,7 @@
  * @license	http://opensource.org/licenses/gpl-license.php GNU Public License
  * @author	{@link http://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-5
  * @author  {@link http://www.lucas-smith.co.uk/ Martin Lucas-Smith}
- * @version 1.01
+ * @version See $version below
  * 
  * REQUIREMENTS:
  * - PHP should ideally have the Tidy extension compiled/loaded
@@ -52,7 +52,7 @@ class pureContentEditor
 		'wordwrapViewedSubmittedHtml' => false,	// Whether to wordwrap submitted HTML in the confirmation display (will not affect the file itself)
 		'bannedLocations' => array ('/sitetech/*', ),			// List of banned locations where pages/folders cannot be created and which will not be listed
 		'allowPageCreationAtRootLevel' => false,	// Whether to allow page creation at root level (e.g. /page.html) rather than below (e.g. /directory/page.html)
-		'backupReplacedLiveFiles' => true,		// Whether to backup files on the live site which have been replaced
+		'archiveReplacedLiveFiles' => true,		// Whether to backup files on the live site which have been replaced (either true [put in same location], false [no archiving] or a path
 		'externalLinksTarget'	=> '_blank',	// The window target name which will be instanted for external links (as made within the editing system) or false
 		'imageAlignmentByClass'	=> true,		// Replace align="foo" with class="foo" for images
 		'logoutlocation'	=> '/logout.html',	// False if there is no logout available from the authentication agent or the location of the page
@@ -61,6 +61,9 @@ class pureContentEditor
 	# Specify the minimum version of PHP required
 	#!# Need to audit this
 	var $minimumPhpVersion = '4.3.0';
+	
+	# Version of this application
+	var $version = '1.0.2';
 	
 	
 	# Constructor
@@ -213,6 +216,12 @@ class pureContentEditor
 		$this->filestoreRoot = ((substr ($this->filestoreRoot, -1) == '/') ? substr ($this->filestoreRoot, 0, -1) : $this->filestoreRoot);
 		$this->liveSiteRoot = ((substr ($this->liveSiteRoot, -1) == '/') ? substr ($this->liveSiteRoot, 0, -1) : $this->liveSiteRoot);
 		
+		# If a archiving is required and a location is specified then assign the archive root
+		$this->archiveRoot = false;
+		if ($this->archiveReplacedLiveFiles && $this->archiveReplacedLiveFiles !== true) {
+			$this->archiveRoot = ((substr ($this->archiveReplacedLiveFiles, -1) == '/') ? substr ($this->archiveReplacedLiveFiles, 0, -1) : $this->archiveReplacedLiveFiles);
+		}
+		
 		# Ensure the current page is not the instantiating stub file
 		$this->stubFileLocation = ereg_replace ('^' . $this->liveSiteRoot, '', $_SERVER['SCRIPT_FILENAME']);
 		
@@ -230,6 +239,19 @@ class pureContentEditor
 			}
 			if (!application::directoryIsWritable ($this->filestoreRoot)) {
 				$setupErrors[] = 'It is not currently possible to write files to the filestore. The administrator needs to ensure the directory exists and fix the permissions first.';
+			}
+		}
+		
+		# Ensure the archive exists and is writable before continuing, if the location has been supplied
+		if ($this->archiveRoot) {
+			if (!is_dir ($this->archiveRoot)) {
+				if (!@mkdir ($this->archiveRoot, 0775, $recursive = true)) {
+					$this->reportErrors ('There was a problem creating the main archive directory.', "The archiveRoot, which cannot be created, specified in the settings, is: {$this->archiveRoot}/");
+					return false;
+				}
+			}
+			if (!application::directoryIsWritable ($this->archiveRoot)) {
+				$setupErrors[] = 'It is not currently possible to archive files to the archive. The administrator needs to ensure the directory exists and fix the permissions first.';
 			}
 		}
 		
@@ -1280,10 +1302,8 @@ class pureContentEditor
 			return false;
 		}
 		
-		# Create the directory, ensuring that / becomes \ on Windows
-		$newDirectory = $this->filestoreRoot . $this->currentDirectory . $new . '/';
-		if (strstr (PHP_OS, 'WIN')) {$newDirectory = str_replace ('/', '\\', $newDirectory);}
-		if (!@mkdir ($newDirectory, 0775, $recursive = true)) {
+		# Create the directory
+		if (!$this->makeDirectory ($this->filestoreRoot . $this->currentDirectory . $new . '/')) {
 			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the filestore; no index page or section title have been created either because of this.', "The proposed new directory was {$this->currentDirectory}{$new}/");
 			return false;
 		}
@@ -1314,6 +1334,20 @@ class pureContentEditor
 		# Notionally return true
 		echo "<p class=\"success\">The new folder and title file were successfully created. You should now <a href=\"$new/{$this->directoryIndex}?edit\">edit the front page of this new section</a>.</p>";
 		return true;
+	}
+	
+	
+	# Wrapper function to make a directory, ensuring that windows backslashes are converted and that recursiveness is dealt with
+	function makeDirectory ($newDirectory)
+	{
+		# Ensuring that / becomes \ on Windows
+		if (strstr (PHP_OS, 'WIN')) {$newDirectory = str_replace ('/', '\\', $newDirectory);}
+		
+		# If the directory exists, return success
+		if (is_dir ($newDirectory)) {return true;}
+		
+		# Attempt the directory creation and return the result
+		return (@mkdir ($newDirectory, 0775, $recursive = true));
 	}
 	
 	
@@ -2621,14 +2655,23 @@ class pureContentEditor
 		$newFileLiveLocationFromRoot = $this->liveSiteRoot . $newFileLiveLocation;
 		
 		# Backup replaced live files if necessary
-		if ($this->backupReplacedLiveFiles) {
+		if ($this->archiveReplacedLiveFiles) {
 			if (file_exists ($newFileLiveLocationFromRoot)) {
-				$backupLocation = $newFileLiveLocation . '.' . date ('Ymd-His');
-				if (!@copy ($newFileLiveLocationFromRoot, $this->liveSiteRoot . $backupLocation)) {
-					$this->reportErrors ('The new file was not approved, as there was a problem backing up the existing file on the live site of the same name.', "This backup would have been at $backupLocation on the live site.");
+				$archiveLocation = $newFileLiveLocation . '.' . date ('Ymd-His');
+				$archiveLocationFromRoot = ($this->archiveRoot ? $this->archiveRoot : $this->liveSiteRoot) . $archiveLocation;
+				
+				# Create the directory if necessary
+				if (!$this->makeDirectory (dirname ($archiveLocationFromRoot))) {
+					$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the archive.', "The proposed new directory was {$archiveLocationFromRoot} .");
 					return false;
 				}
-				$this->logChange ("Backed up existing file on the live site $newFileLiveLocation as $backupLocation");
+				
+				# Copy the file across
+				if (!@copy ($newFileLiveLocationFromRoot, $archiveLocationFromRoot)) {
+					$this->reportErrors ('The new file was not approved, as there was a problem archiving the existing file on the live site of the same name.', "This archived file would have been at {$archiveLocationFromRoot} .");
+					return false;
+				}
+				$this->logChange ("Archived existing file on the live site $newFileLiveLocation to $archiveLocationFromRoot");
 			}
 		}
 		
@@ -2955,7 +2998,6 @@ class pureContentEditor
 #!# Make the reviewing screen more user-friendly
 #!# Larger textarea replacement size
 #!# When doing include (), do a check first for the type of file; if a text file, just do a file_get_contents surround with <pre />
-#!# Add an archiveStoreRoot for .old files
 #!# Prevent creation of a permission when a more wide-ranging one exists
 #!# Explicitly state username
 #!# Remove 'you will be informed of permissions' in administrator account creation e-mail
@@ -2964,6 +3006,10 @@ class pureContentEditor
 #!# "The file you submitted, /index.html , on" -> "The file you submitted, PAGETITLE , on"
 #!# 'View live version' of page button
 #!# Option not to mail yourself when you approve your own page and you are the only administrator
+#!# Audit the use of relative links
+#!# Enable PDF and Word uploading.
+#!# Add 'Make administrator' to user control panel
+#!# Enable user to be able to save pages directly without approval
 
 
 ### Potential future development suggestions:
@@ -2971,6 +3017,8 @@ class pureContentEditor
 #R# Fix known but difficult bug in review (): 'reject' where the tasks list links all break because there is no longer a page there
 #R# Implement a better algorithm for typeOfFile ()
 #R# Implement the notion of a currently active permission which is definitive and which can be looked up against
+# Groups facility
+# <table class="lines"> - has to wait for FCKeditor to support this: see https://sourceforge.net/tracker/index.php?func=detail&aid=1228908&group_id=75348&atid=543656
 # Specialised gui for menu and title files (rather than using 'list pages' or entering the URL directly)
 # Automatic deletion of permissions when folders don't exist, if a setting is turned on for this (NB needs to distinguish between not present and no permission - may not be possible)
 # More extensive menu editing system for the switch in edit ()
@@ -2985,7 +3033,7 @@ class pureContentEditor
 # Find some way to enable browsing of /foo/bar/[no index.html] where that is a new directory that does not exist on the live site - maybe a mod_rewrite change
 # Renaming on making live
 # More control over naming - moving regexp into the settings but disallow _ at the start
-# Groups facility
+
 
 
 ?>
