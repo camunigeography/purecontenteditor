@@ -1,7 +1,7 @@
 <?php
 
 /**
- * An class to create an editing facility on top of a pureContent-enabled site
+ * A class to create an editing facility on top of a pureContent-enabled site
  * 
  * @package pureContentEditor
  * @license	http://opensource.org/licenses/gpl-license.php GNU Public License
@@ -35,6 +35,8 @@ class pureContentEditor
 		'changelog' => '/.changelog.csv',		// Changelog
 		'richtextEditorWidth' => '100%',		// Richtext editor width in pixels e.g. 400 or percent e.g. '80%'
 		'richtextEditorHeight' => '400px',		// Richtext editor height in pixels e.g. 400 or percent e.g. '80%'
+		'textareaEditorWidth' => '90',		// Textarea editor width (used only for HTML/PHP mode) as characters
+		'textareaEditorHeight' => '20',		// Textarea editor height (used only for HTML/PHP mode) as characters
 		'richtextEditorEditorAreaCSS' => '/sitetech/global.css',	# CSS file to use in the editor area
 		'richtextEditorBasePath' => '/_fckeditor/',	// Location of the DHTML editing component files
 		'directoryIndex' => 'index.html',		// Default directory index name
@@ -53,6 +55,7 @@ class pureContentEditor
 		'bannedLocations' => array ('/sitetech/*', ),			// List of banned locations where pages/folders cannot be created and which will not be listed
 		'allowPageCreationAtRootLevel' => false,	// Whether to allow page creation at root level (e.g. /page.html) rather than below (e.g. /directory/page.html)
 		'archiveReplacedLiveFiles' => true,		// Whether to backup files on the live site which have been replaced (either true [put in same location], false [no archiving] or a path
+		'protectEmailAddresses' => true,	// Whether to obfuscate e-mail addresses
 		'externalLinksTarget'	=> '_blank',	// The window target name which will be instanted for external links (as made within the editing system) or false
 		'imageAlignmentByClass'	=> true,		// Replace align="foo" with class="foo" for images
 		'logoutlocation'	=> false,	// False if there is no logout available from the authentication agent or the location of the page
@@ -63,7 +66,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.0.3';
+	var $version = '1.0.4';
 	
 	
 	# Constructor
@@ -711,8 +714,8 @@ class pureContentEditor
 	# Function to determine whether the user can edit the current page
 	function userCanEditCurrentPage ()
 	{
-		# Set a flag for whether the page contains the string <?php ; return false if found
-		if ($this->pageContainsPhp) {return false;}
+		# Set a flag for whether the page contains the string <?php ; return false if found; however, administrators can edit the page, but in non-WYSIWYG mode
+		if ($this->pageContainsPhp && !$this->userIsAdministrator) {return false;}
 		
 		# If the page is being aliased, the source is therefore not available so cannot be edited
 		if ($this->pageIsBeingAliased) {return false;}
@@ -1084,6 +1087,11 @@ class pureContentEditor
 		# Check for the presence of PHP instructions or aliasing
 		if ($this->pageContainsPhp) {
 			
+			# Administrators get a warning that this can only be edited as HTML rather than in WYSIWYG mode
+			if ($this->userIsAdministrator) {
+				$message = "\n<p class=\"information\">Because this page contains PHP instructions, it cannot be edited using the normal visual mode. However, as you are an administrator, you are able to <a href=\"{$this->page}?edit\">edit the HTML/PHP in code mode</a>.</p>";
+			}
+			
 			# Give a message that the page cannot be edited with this system
 			echo $message;
 			
@@ -1143,22 +1151,37 @@ class pureContentEditor
 			# For a menu or a normal page
 			case 'menuFile':
 			default:
-				# Create the richtext field
-				$form->richtext (array (
-					'name'			=> 'content',
-					'title'					=> 'Page content',
-					'required'				=> true,
-					'width'					=> $this->richtextEditorWidth,
-					'height'				=> $this->richtextEditorHeight,
-					'default'				=> $this->editableFileContents,
-					'editorBasePath'		=> $this->richtextEditorBasePath,
-					'editorToolbarSet'		=> 'pureContent',
-					'editorConfig'			=> array (
-						'StartupFocus'			=> true,
-						'EditorAreaCSS'			=> $this->richtextEditorEditorAreaCSS,
-						// 'BaseHref'				=> $this->currentDirectory, // Doesn't work, and http://sourceforge.net/tracker/?group_id=75348&atid=543653&func=detail&aid=1205638 doesn't fix it
-					),
-				));
+				
+				# If the page contains PHP (and thus the user is an administrator to have got this far in the code), give a text area instead
+				if ($this->pageContainsPhp) {
+					$form->textarea (array (
+						'name'			=> 'content',
+						'title'					=> 'Page content',
+						'required'				=> true,
+						'cols'					=> $this->textareaEditorWidth,
+						'rows'					=> $this->textareaEditorHeight,
+						'default'				=> $this->editableFileContents,
+					));
+					
+				} else {
+					
+					# Create the richtext field
+					$form->richtext (array (
+						'name'			=> 'content',
+						'title'					=> 'Page content',
+						'required'				=> true,
+						'width'					=> $this->richtextEditorWidth,
+						'height'				=> $this->richtextEditorHeight,
+						'default'				=> $this->editableFileContents,
+						'editorBasePath'		=> $this->richtextEditorBasePath,
+						'editorToolbarSet'		=> 'pureContent',
+						'editorConfig'			=> array (
+							'StartupFocus'			=> true,
+							'EditorAreaCSS'			=> $this->richtextEditorEditorAreaCSS,
+							// 'BaseHref'				=> $this->currentDirectory, // Doesn't work, and http://sourceforge.net/tracker/?group_id=75348&atid=543653&func=detail&aid=1205638 doesn't fix it
+						),
+					));
+				}
 		}
 		
 		# Select the administrator to e-mail
@@ -1567,15 +1590,21 @@ class pureContentEditor
 	{
 		# Define the replacements as an associative array
 		$replacements = array (
-			'<span>@</span>' => '<span>&#64;</span>',	// Replace e-mail addresses with anti-spambot equivalents
-			'<a href="mailto:([^@]*)@([^"]*)">([^@]*)@([^<]*)</a>' => '\3<span>&#64;</span>\4',	// Replace e-mail addresses with anti-spambot equivalents
-			' href="([^"]*)/' . $this->directoryIndex . '"'	=> ' href="\1/"',	// Chop off directory index links
 			" href=\"{$this->editSiteUrl}/"	=> " href=\"{$this->liveSiteUrl}/",	// Ensure images are not prefixed with the edit site's URL
 			" href=\"{$this->liveSiteUrl}/"	=> " href=\"/",	// Ensure images are not prefixed with the edit site's URL
 			" src=\"{$this->liveSiteUrl}/"	=> 'src="/',	// Ensure images are not prefixed with the current site's URL
 			"<(li|tr|/tr|tbody|/tbody)"	=> "\t<\\1",	// Indent level-two tags
 			"<(td|/td)"	=> "\t\t<\\1",	// Indent level-three tags
 		);
+		
+		# Obfuscate e-mail addresses
+		if ($this->protectEmailAddresses) {
+			$replacements += array (
+				'<span>@</span>' => '<span>&#64;</span>',	// Replace e-mail addresses with anti-spambot equivalents
+				'<a href="mailto:([^@]*)@([^"]*)">([^@]*)@([^<]*)</a>' => '\3<span>&#64;</span>\4',	// Replace e-mail addresses with anti-spambot equivalents
+				' href="([^"]*)/' . $this->directoryIndex . '"'	=> ' href="\1/"',	// Chop off directory index links
+			);
+		}
 		
 		# Ensure links to pages outside the page are in a new window
 		if ($this->externalLinksTarget) {
@@ -2611,9 +2640,9 @@ class pureContentEditor
 		
 		# Define the actions
 		$actions = array (
-			'approve-message'	=> "Approve it (move to live site) and inform its creator, {$this->convertUsername ($this->submissions[$filename]['username'])} †",
+			'approve-message'	=> 'Approve it (move to live site) and inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username']) . ' †',
 			'approve'			=> 'Approve it (move to live site) but send no message',
-			'reject-message'	=> "Reject it (and delete the file) and inform its creator, {$this->convertUsername ($this->submissions[$filename]['username'])} †",
+			'reject-message'	=> 'Reject it (and delete the file) and inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username']) . ' †"',
 			'reject'			=> 'Reject it (and delete the file) but send no message',
 			'edit'				=> "Edit it further now (without sending a message)",
 			'message'			=> 'Only send a message to its creator (add a message below) †',
@@ -3110,7 +3139,7 @@ class pureContentEditor
 # Specialised gui for menu and title files (rather than using 'list pages' or entering the URL directly)
 # Automatic deletion of permissions when folders don't exist, if a setting is turned on for this (NB needs to distinguish between not present and no permission - may not be possible)
 # More extensive menu editing system for the switch in edit ()
-# Provide a validation system (perhaps using Tidy if it is not already)?
+# Provide a validation system (perhaps using Tidy if it is not already)? - See: http://thraxil.org/users/anders/posts/2005/09/20/Validation-meet-Unit-Testing-Unit-Testing-meet-Validation/
 # Add a link checking mechanism
 # Extension to deal with deleting/moving files or even whole folders? - would create major difficulties with integration with redirects etc, however
 # Tighten up matching of ' src=' (currently will match that string outside an img tag)
@@ -3125,6 +3154,8 @@ class pureContentEditor
 # Ability to add a permission directly when adding a user rather than using two stages (and hence two e-mails)
 # BUG: _fckeditor being appended to images/links in some cases
 # Moderation should cc: other administrators (not yourself though) when a page is approved
+# Get rid of 'Note: You are browsing a copy of the page which is currently live' message when that's the only one
+# Make /page.html rights the default when on a section page rather than an index page
 
 
 ?>
