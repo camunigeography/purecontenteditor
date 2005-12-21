@@ -1,5 +1,6 @@
 <?php
 
+
 /**
  * A class to create an editing facility on top of a pureContent-enabled site
  * 
@@ -39,6 +40,7 @@ class pureContentEditor
 		'textareaEditorHeight' => '20',		// Textarea editor height (used only for HTML/PHP mode) as characters
 		'richtextEditorEditorAreaCSS' => '/sitetech/global.css',	# CSS file to use in the editor area
 		'richtextEditorBasePath' => '/_fckeditor/',	// Location of the DHTML editing component files
+		'richtextEditorToolbarSet' => 'pureContent',	// Richtext editor Toolbar set (must exist in fckconfig-customised.js)
 		'directoryIndex' => 'index.html',		// Default directory index name
 		'newPageTemplate' => "\n<h1>Title goes here</h1>\n<p>Content starts here</p>",	// Default directory index file contents
 		'messageSignatureGreeting' => 'Best wishes,',	// Preset text for the e-mail signature to users
@@ -58,15 +60,16 @@ class pureContentEditor
 		'protectEmailAddresses' => true,	// Whether to obfuscate e-mail addresses
 		'externalLinksTarget'	=> '_blank',	// The window target name which will be instanted for external links (as made within the editing system) or false
 		'imageAlignmentByClass'	=> true,		// Replace align="foo" with class="foo" for images
-		'logoutlocation'	=> false,	// False if there is no logout available from the authentication agent or the location of the page
+		'logout'	=> false,	// False if there is no logout available from the authentication agent or the location of the page
 		'disableDateLimitation' => false,	// Whether to disable the date limitation functionality
+		'enablePhpCheck' => true,	// Whether to check for PHP (if switched off, ensure this is enabled in the fckconfig-customised.js file)
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.0.4';
+	var $version = '1.0.5';
 	
 	
 	# Constructor
@@ -166,7 +169,7 @@ class pureContentEditor
 		echo $this->showMenu ();
 		
 		# Check that the action is allowed; 'live' is a special case as it's not a real function as such, as is logout
-		if (!array_key_exists ($this->action, $this->tasks) || $this->action == 'live' || ($this->action == 'logout' && $this->logoutlocation)) {
+		if (!array_key_exists ($this->action, $this->tasks) || $this->action == 'live' || ($this->action == 'logout' && $this->logout)) {
 			echo "\n" . '<p class="failure">You appear to have requested a non-existent/unavailable function which is not available. Please use one of the links in the menu to continue.</p>';
 			return false;
 		}
@@ -728,6 +731,9 @@ class pureContentEditor
 	# Function to determine whether the page contains PHP instructions
 	function pageContainsPhp ()
 	{
+		# Return false if checking not required
+		if (!$this->enablePhpCheck) {return false;}
+		
 		# Set a flag for whether the page contains the string <?php ; return false if found
 		return (strpos ($this->editableFileContents, '<?php') !== false);
 	}
@@ -848,7 +854,7 @@ class pureContentEditor
 			'logout' => array (
 				'title' => 'Log out',
 				'tooltip' => 'Log out when you have finished working with the editing system to secure your account',
-				'url' => ($this->logoutlocation ? $this->logoutlocation : '?logout'),
+				'url' => ($this->logout ? $this->logout : '?logout'),
 				'administratorsOnly' => false,
 				'grouping' => 'Additional',
 			),
@@ -1042,7 +1048,7 @@ class pureContentEditor
 	function logout ()
 	{
 		# Create the logout link
-		echo "\n<p class=\"information\">" . ($this->logoutlocation ? "<a href=\"{$this->logoutlocation}\">Please click here to log out.</a>" : 'To log out, close all instances of your web browser.') . '</p>';
+		echo "\n<p class=\"information\">" . ($this->logout ? "<a href=\"{$this->logout}\">Please click here to log out.</a>" : 'To log out, close all instances of your web browser.') . '</p>';
 	}
 	
 	
@@ -1053,6 +1059,8 @@ class pureContentEditor
 		echo "\n\n" . '<div id="purecontenteditorhelp">';
 		echo "\n<h1>Help/about</h1>";
 		echo "\n<p>Welcome to the pureContentEditor! Use of this system is intended to be largely self-explanatory: you can browse around the site as normal, and perform various actions using the menu buttons above.</p>";
+		echo "\n<h2>Tips</h2>";
+		echo "\n" . '<p>A <a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf" target="_blank">tip sheet</a> can be printed off and stuck next to your computer.</p>';
 		echo "\n<h2>Requirements</h2>";
 		echo "\n" . '<p>Most modern browsers, as <a href="http://www.fckeditor.net/" target="external">listed at fckeditor.net</a>, are supported.</p>';
 		echo "\n<p>If your browser has a popup blocker, this must be disabled for this site.</p>";
@@ -1127,12 +1135,12 @@ class pureContentEditor
 			'displayDescriptions' => ($this->typeOfFile == 'titleFile'),
 			'displayColons' => true,
 			'submitButtonText' => 'Submit page for approval' . ($userCanMakeFilesLiveImmediately ? ' / Make live' : ''),
-			'displayFormCompleteText' => false,
+			'formCompleteText' => false,
 			'nullText' => 'Select which administrator to inform of this submission:',
 		));
 		
-		# Give a message for what file is being edited
-		$form->heading ('', $this->versionMessage (__FUNCTION__));
+		# Give a message for what file is being edited, and if necessary a PHP care warning
+		$form->heading ('', $this->versionMessage (__FUNCTION__) . ($this->pageContainsPhp ? "</p>\n<p class=\"information\">Take care when editing this page as it contains special PHP code." : ''));
 		
 		# Give the correct type of editing box
 		switch ($this->typeOfFile) {
@@ -1174,12 +1182,16 @@ class pureContentEditor
 						'height'				=> $this->richtextEditorHeight,
 						'default'				=> $this->editableFileContents,
 						'editorBasePath'		=> $this->richtextEditorBasePath,
-						'editorToolbarSet'		=> 'pureContent',
+						'editorToolbarSet'		=> $this->richtextEditorToolbarSet,
 						'editorConfig'			=> array (
 							'StartupFocus'			=> true,
 							'EditorAreaCSS'			=> $this->richtextEditorEditorAreaCSS,
 							// 'BaseHref'				=> $this->currentDirectory, // Doesn't work, and http://sourceforge.net/tracker/?group_id=75348&atid=543653&func=detail&aid=1205638 doesn't fix it
 						),
+						'protectEmailAddresses' => $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
+						'externalLinksTarget'	=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
+						'directoryIndex' 		=> $this->directoryIndex,			// Default directory index name
+						'imageAlignmentByClass'	=> $this->imageAlignmentByClass,	// Replace align="foo" with class="foo" for images
 					));
 				}
 		}
@@ -1190,7 +1202,6 @@ class pureContentEditor
 		    'values'            => $this->administratorSelectionList ($enableNoneOption = $userCanMakeFilesLiveImmediately),
 		    'title'                    => 'Administrator to inform', 
 		    'required'        => 1,
-			'output'			=> array ('processing' => 'compiled'),
 			'default' => ($userCanMakeFilesLiveImmediately ? '_none' : '_all'),
 		));
 		
@@ -1211,7 +1222,24 @@ class pureContentEditor
 		if (!$result = $form->processForm ()) {return false;}
 		
 		# Get the submitted content
-		$content = (($this->typeOfFile == 'titleFile') ? $result['content'] : $this->editAdjustHtml ($result['content']));
+		$content = $result['content'];
+		
+		# Clean if necessary
+		if ($this->typeOfFile != 'titleFile') {
+			
+			# Define the replacements as an associative array
+			$replacements = array (
+				" href=\"{$this->editSiteUrl}/"	=> " href=\"{$this->liveSiteUrl}/",	// Ensure images are not prefixed with the edit site's URL
+				" href=\"{$this->liveSiteUrl}/"	=> " href=\"/",	// Ensure images are not prefixed with the edit site's URL
+				" src=\"{$this->liveSiteUrl}/"	=> 'src="/',	// Ensure images are not prefixed with the current site's URL
+				" href=\"http://{$this->liveSiteUrl}:{$this->editHostPort}/"	=> ' href=\"/',	// Workaround for Editor port reassignment bug
+			);
+			
+			# Perform the replacements
+			foreach ($replacements as $find => $replace) {
+				$content = eregi_replace ($find, $replace, $content);
+			}
+		}
 		
 		# Determine whether to approve immediately
 		$approveImmediately = ($userCanMakeFilesLiveImmediately ? $result['preapprove'][$makeAdministratorText] : false);
@@ -1314,7 +1342,7 @@ class pureContentEditor
 			'displayDescriptions'	=> true,
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions'	=> false,
-			'displayFormCompleteText'	=> false,
+			'formCompleteText'	=> false,
 			'submitButtonText'		=> 'Create new section (folder)',
 		));
 		$form->heading ('', "
@@ -1371,7 +1399,7 @@ class pureContentEditor
 		$this->logChange ("Created folder {$this->currentDirectory}{$new}/");
 		
 		# Create the title file
-		$titleFileLocation = $newDirectory . $this->pureContentTitleFile;
+		$titleFileLocation = $new . $this->pureContentTitleFile;
 		if (!application::createFileFromFullPath ($titleFileLocation, $result['title'], $addStamp = true)) {
 			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the title file in the filestore; the new index page has also not been created.');
 			return false;
@@ -1381,7 +1409,7 @@ class pureContentEditor
 		$this->logChange ("Created title file {$this->currentDirectory}{$new}{$this->pureContentTitleFile}");
 		
 		# Create the front page
-		$titleFileLocation = $newDirectory . $this->directoryIndex;
+		$titleFileLocation = $new . $this->directoryIndex;
 		if (!application::createFileFromFullPath ($titleFileLocation, $this->newPageTemplate, $addStamp = true)) {
 			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new directory index in the filestore.');
 			return false;
@@ -1491,7 +1519,7 @@ class pureContentEditor
 			'displayDescriptions'	=> true,
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions'	=> false,
-			'displayFormCompleteText'	=> false,
+			'formCompleteText'	=> false,
 			'submitButtonText'		=> 'Create new page',
 			'submitTo' => "{$this->page}?" . __FUNCTION__,
 		));
@@ -1585,14 +1613,12 @@ class pureContentEditor
 	}
 	
 	
+	/*
 	# Function to adjust the (already-cleaned) HTML
 	function editAdjustHtml ($content)
 	{
 		# Define the replacements as an associative array
 		$replacements = array (
-			" href=\"{$this->editSiteUrl}/"	=> " href=\"{$this->liveSiteUrl}/",	// Ensure images are not prefixed with the edit site's URL
-			" href=\"{$this->liveSiteUrl}/"	=> " href=\"/",	// Ensure images are not prefixed with the edit site's URL
-			" src=\"{$this->liveSiteUrl}/"	=> 'src="/',	// Ensure images are not prefixed with the current site's URL
 			"<(li|tr|/tr|tbody|/tbody)"	=> "\t<\\1",	// Indent level-two tags
 			"<(td|/td)"	=> "\t\t<\\1",	// Indent level-three tags
 		);
@@ -1600,8 +1626,8 @@ class pureContentEditor
 		# Obfuscate e-mail addresses
 		if ($this->protectEmailAddresses) {
 			$replacements += array (
-				'<span>@</span>' => '<span>&#64;</span>',	// Replace e-mail addresses with anti-spambot equivalents
 				'<a href="mailto:([^@]*)@([^"]*)">([^@]*)@([^<]*)</a>' => '\3<span>&#64;</span>\4',	// Replace e-mail addresses with anti-spambot equivalents
+				'<span>@</span>' => '<span>&#64;</span>',	// Replace e-mail addresses with anti-spambot equivalents
 				' href="([^"]*)/' . $this->directoryIndex . '"'	=> ' href="\1/"',	// Chop off directory index links
 			);
 		}
@@ -1630,17 +1656,15 @@ class pureContentEditor
 		# Return the adjusted content
 		return $content;
 	}
+	*/
 	
 	
 	# Function to list the users
 	function userList ()
 	{
-		# Get the users from the CSV file
-		$users = csv::getData ($this->userDatabase);
-		
 		# Change the administrator indication
 		$usersFormatted = array ();
-		foreach ($users as $user => $attributes) {
+		foreach ($this->users as $user => $attributes) {
 			$user = "<a href=\"?userAmend=$user\">$user</a>";
 			$usersFormatted[$user] = $attributes;
 			$usersFormatted[$user]['Administrator'] = ($attributes['Administrator'] ? 'Yes' : 'No');
@@ -1663,7 +1687,7 @@ class pureContentEditor
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
-			'displayFormCompleteText' => false,
+			'formCompleteText' => false,
 			'submitTo' => "{$this->page}?" . __FUNCTION__,
 		));
 		
@@ -1763,7 +1787,7 @@ class pureContentEditor
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
-			'displayFormCompleteText' => false,
+			'formCompleteText' => false,
 			'submitTo' => "{$this->page}?" . __FUNCTION__ . "=$username",
 		));
 		
@@ -1771,7 +1795,6 @@ class pureContentEditor
 		$form->heading ('', "Existing user's username:&nbsp;&nbsp;&nbsp;&nbsp;<strong>$this->attributes</strong>");
 		$form->hidden (array ( 
 		    'values'            => array ( 'Username' => $username, ), 
-		    'output'            => array (), 
 		    'title'                    => "Existing user's username:", 
 		));
 		$form->email (array (
@@ -1870,7 +1893,7 @@ class pureContentEditor
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
-			'displayFormCompleteText' => false,
+			'formCompleteText' => false,
 			'submitTo' => "{$this->page}?" . __FUNCTION__,
 		));
 		
@@ -1886,7 +1909,6 @@ class pureContentEditor
 		    'values'            => $deletableUsers, 
 		    'title'                    => 'User to delete', 
 		    'required'        => 1, 
-			'output'			=> array ('processing' => 'compiled'),
 		));
 		$form->input (array (
 		    'name'            => 'confirmation', 
@@ -2118,7 +2140,7 @@ class pureContentEditor
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
-			'displayFormCompleteText' => false,
+			'formCompleteText' => false,
 			'displayDescriptions' => false,
 			'submitTo' => "{$this->page}?" . __FUNCTION__,
 			'nullText' => 'Please select',
@@ -2130,7 +2152,6 @@ class pureContentEditor
 		    'values'            => $users, 
 		    'title'                    => 'Allow user', 
 		    'required'        => 1,
-			'output'			=> array ('processing' => 'compiled'),
 			'default' => (($user && isSet ($users[$user])) ? $user : ''),
 		));
 		$form->select (array ( 
@@ -2139,7 +2160,6 @@ class pureContentEditor
 		    'title'                    => 'Allow changes to', 
 		    'required'        => 1, 
 		    'default'        => $last,
-			'output'			=> array ('processing' => 'compiled'),
 		));
 /*
 		$form->checkboxes (array (
@@ -2260,7 +2280,7 @@ class pureContentEditor
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
-			'displayFormCompleteText' => false,
+			'formCompleteText' => false,
 			'submitTo' => "{$this->page}?" . __FUNCTION__ . "=$permission",
 		));
 		
@@ -2269,7 +2289,6 @@ class pureContentEditor
 		$form->heading ('', "Permission for: &nbsp;&nbsp;&nbsp;&nbsp;<strong>{$username}</strong> to change <strong>{$scope}</strong>");
 		$form->hidden (array ( 
 		    'values'            => array ( 'Permission' => $permission, ), 
-		    'output'            => array (), 
 		    'title'                    => "Existing permission:", 
 		));
 /*
@@ -2560,7 +2579,7 @@ class pureContentEditor
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
-			'displayFormCompleteText' => false,
+			'formCompleteText' => false,
 			'submitTo' => "{$this->page}?" . __FUNCTION__,
 			'submitButtonText' => 'Delete',
 		));
@@ -2573,7 +2592,6 @@ class pureContentEditor
 			'description'	=> 'Permissions are listed in the form of <em>username (actual name): area</em>',
 		    'required'        => 1,
 			'multiple' => false,
-			'output'			=> array ('processing' => 'compiled'),
 		));
 		$form->input (array (
 		    'name'            => 'confirmation', 
@@ -2630,7 +2648,7 @@ class pureContentEditor
 		$form = new form (array (
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'submitButtonText' => 'Take action',
-			'displayFormCompleteText' => false,
+			'formCompleteText' => false,
 		));
 		
 		# Define the heading
@@ -2642,7 +2660,7 @@ class pureContentEditor
 		$actions = array (
 			'approve-message'	=> 'Approve it (move to live site) and inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username']) . ' †',
 			'approve'			=> 'Approve it (move to live site) but send no message',
-			'reject-message'	=> 'Reject it (and delete the file) and inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username']) . ' †"',
+			'reject-message'	=> 'Reject it (and delete the file) and inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username']) . ' †',
 			'reject'			=> 'Reject it (and delete the file) but send no message',
 			'edit'				=> "Edit it further now (without sending a message)",
 			'message'			=> 'Only send a message to its creator (add a message below) †',
@@ -3091,7 +3109,7 @@ class pureContentEditor
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'submitButtonText' => 'Send message',
 			'displayDescriptions' => false,
-			'displayFormCompleteText' => false,
+			'formCompleteText' => false,
 		));
 		
 		# Form widgets
@@ -3100,7 +3118,6 @@ class pureContentEditor
 			'values'			=> $users,
 			'title'					=> 'Send message to',
 			'required'		=> 1,
-			'output'			=> array ('processing' => 'compiled'),
 		));
 		$form->textarea (array (
 			'name'			=> 'message',
@@ -3127,6 +3144,7 @@ class pureContentEditor
 #!# Enable PDF and Word uploading.
 #!# Enable user to be able to save pages directly without approval
 #!# Remove hard-coded mention of Raven
+#!# Checking writability needs to be done on the proposed file, NOT at top level
 
 
 ### Potential future development suggestions:
@@ -3156,6 +3174,21 @@ class pureContentEditor
 # Moderation should cc: other administrators (not yourself though) when a page is approved
 # Get rid of 'Note: You are browsing a copy of the page which is currently live' message when that's the only one
 # Make /page.html rights the default when on a section page rather than an index page
-
+# Enable creation of .title.txt files
+# Sort by ... for reviewing
+# Diffing function - apparently wikimedia includes a good PHP class for this
+# /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
+# Direct update rights
+# Where multiple submissions of same page have a warning that it's not the latest (if not) and have a 'delete earlier submissions' box
+# Move rejected items to filestore as same.rejected
+# Link checker
+# Option to ban top-level _directory_ creation as well as files
+# Force .menu.html links to be absolute
+# Less ugly e-mail title
+# Replace <br /></h1> with </h1> - seems a common problem
+# 'Mail all users' function (complete with "are you sure you want to?" confirmation)
+# [New] symbol to mark when a page is new rather than updated
+# Lookup-enabling interface for auto permissions
+# Have a single 'master' port so that links are correct when running off two ports at once (or sort out /login ...)
 
 ?>
