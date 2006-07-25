@@ -55,7 +55,7 @@ class pureContentEditor
 		'hideDirectoryNames' => array ('.AppleDouble', ), // Directory names to exclude from directory listings
 		'wordwrapViewedSubmittedHtml' => false,	// Whether to wordwrap submitted HTML in the confirmation display (will not affect the file itself)
 		'bannedLocations' => array ('/sitetech/*', ),			// List of banned locations where pages/folders cannot be created and which will not be listed
-		'allowPageCreationAtRootLevel' => false,	// Whether to allow page creation at root level (e.g. /page.html) rather than below (e.g. /directory/page.html)
+		'allowPageCreationAtRootLevel' => false,	// Whether to allow page creation at root level (e.g. example.com/page.html )
 		'archiveReplacedLiveFiles' => true,		// Whether to backup files on the live site which have been replaced (either true [put in same location], false [no archiving] or a path
 		'protectEmailAddresses' => true,	// Whether to obfuscate e-mail addresses
 		'externalLinksTarget'	=> '_blank',	// The window target name which will be instanted for external links (as made within the editing system) or false
@@ -69,7 +69,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.0.5';
+	var $version = '1.0.6';
 	
 	
 	# Constructor
@@ -928,7 +928,7 @@ class pureContentEditor
 		# Loop through each task to perform checks for validity
 		foreach ($tasks as $task => $attributes) {
 			
-			# Disable access to a task for those marked administratorsOnly
+			# Disable access to a task for those marked administratorsOnly if the user is not an administrator
 			if ($attributes['administratorsOnly'] && !$this->userIsAdministrator) {
 				unset ($tasks[$task]);
 			}
@@ -1173,6 +1173,14 @@ class pureContentEditor
 					
 				} else {
 					
+					# Define initial replacements
+					$replacements = array (
+						" href=\"{$this->editSiteUrl}/"	=> " href=\"{$this->liveSiteUrl}/",	// Ensure images are not prefixed with the edit site's URL
+						" href=\"{$this->liveSiteUrl}/"	=> " href=\"/",	// Ensure images are not prefixed with the edit site's URL
+						" src=\"{$this->liveSiteUrl}/"	=> 'src="/',	// Ensure images are not prefixed with the current site's URL
+						" href=\"http://{$this->liveSiteUrl}:{$this->editHostPort}/"	=> ' href=\"/',	// Workaround for Editor port reassignment bug
+					);
+					
 					# Create the richtext field
 					$form->richtext (array (
 						'name'			=> 'content',
@@ -1192,6 +1200,7 @@ class pureContentEditor
 						'externalLinksTarget'	=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
 						'directoryIndex' 		=> $this->directoryIndex,			// Default directory index name
 						'imageAlignmentByClass'	=> $this->imageAlignmentByClass,	// Replace align="foo" with class="foo" for images
+						'replacements'			=> $replacements,
 					));
 				}
 		}
@@ -1223,23 +1232,6 @@ class pureContentEditor
 		
 		# Get the submitted content
 		$content = $result['content'];
-		
-		# Clean if necessary
-		if ($this->typeOfFile != 'titleFile') {
-			
-			# Define the replacements as an associative array
-			$replacements = array (
-				" href=\"{$this->editSiteUrl}/"	=> " href=\"{$this->liveSiteUrl}/",	// Ensure images are not prefixed with the edit site's URL
-				" href=\"{$this->liveSiteUrl}/"	=> " href=\"/",	// Ensure images are not prefixed with the edit site's URL
-				" src=\"{$this->liveSiteUrl}/"	=> 'src="/',	// Ensure images are not prefixed with the current site's URL
-				" href=\"http://{$this->liveSiteUrl}:{$this->editHostPort}/"	=> ' href=\"/',	// Workaround for Editor port reassignment bug
-			);
-			
-			# Perform the replacements
-			foreach ($replacements as $find => $replace) {
-				$content = eregi_replace ($find, $replace, $content);
-			}
-		}
 		
 		# Determine whether to approve immediately
 		$approveImmediately = ($userCanMakeFilesLiveImmediately ? $result['preapprove'][$makeAdministratorText] : false);
@@ -3176,7 +3168,7 @@ class pureContentEditor
 # Make /page.html rights the default when on a section page rather than an index page
 # Enable creation of .title.txt files
 # Sort by ... for reviewing
-# Diffing function - apparently wikimedia includes a good PHP class for this
+# Diffing function - apparently wikimedia includes a good PHP class for this - see http://cvs.sourceforge.net/viewcvs.py/wikipedia/phase3/includes/  - difference engine
 # /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
 # Direct update rights
 # Where multiple submissions of same page have a warning that it's not the latest (if not) and have a 'delete earlier submissions' box
