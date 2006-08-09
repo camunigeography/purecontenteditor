@@ -52,7 +52,7 @@ class pureContentEditor
 		'databaseTimestampingMode' => '.old',	// Whether to backup old CSV databases with .old ('.old') or a timestamp (true) or not at all (false)
 		'enableAliasingChecks' => true,			// Whether to enable checks for a server-aliased page if a page is not found
 		'developmentEnvironment' => false,		// Whether to run in development environment mode
-		'hideDirectoryNames' => array ('.AppleDouble', ), // Directory names to exclude from directory listings
+		'hideDirectoryNames' => array ('.AppleDouble', 'Network Trash Folder', 'TheVolumeSettingsFolder'), // Directory names to exclude from directory listings
 		'wordwrapViewedSubmittedHtml' => false,	// Whether to wordwrap submitted HTML in the confirmation display (will not affect the file itself)
 		'bannedLocations' => array ('/sitetech/*', ),			// List of banned locations where pages/folders cannot be created and which will not be listed
 		'allowPageCreationAtRootLevel' => false,	// Whether to allow page creation at root level (e.g. example.com/page.html )
@@ -63,13 +63,14 @@ class pureContentEditor
 		'logout'	=> false,	// False if there is no logout available from the authentication agent or the location of the page
 		'disableDateLimitation' => false,	// Whether to disable the date limitation functionality
 		'enablePhpCheck' => true,	// Whether to check for PHP (if switched off, ensure this is enabled in the fckconfig-customised.js file)
+		'allImagesRequireAltText'	=> true,	// Whether all images require alt text to be supplied
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.0.6';
+	var $version = '1.0.7';
 	
 	
 	# Constructor
@@ -552,6 +553,13 @@ class pureContentEditor
 			$split = explode ('=', $query[1]);
 			$action = $split[0];
 			$attributes = (isSet ($split[1]) ? $split[1] : '');
+			
+/*	breadcrumb editing work - TODO
+			# If the breadcrumb type is requested, substitute the directory index component with the breadcrumb component
+			if ($action == 'breadcrumb') {
+				$page = ereg_replace (basename ($page) . '$', $this->pureContentTitleFile, $page);
+			}
+*/
 		}
 		
 		# Return the query and attributes
@@ -654,6 +662,10 @@ class pureContentEditor
 		$editing = ($rights);
 		$pageCreation = (($rights == 'tree' || $rights == 'directory') && !$rootPageCreationRestrictionApplies);
 		$folderCreation = ($rights == 'tree');
+/*	breadcrumb editing work - TODO
+		$pageCreation = (($rights === true || $rights === 'tree' || $rights === 'directory') && !$rootPageCreationRestrictionApplies);
+		$folderCreation = ($rights === true || $rights === 'tree');
+*/
 		
 		# Return the values
 		return array ($editing, $pageCreation, $folderCreation);
@@ -802,26 +814,26 @@ class pureContentEditor
 				'check' => 'userHasPageCreationRightsHere',
 			),
 			
-			/*
-			'subsectionTitle' => array (
-				'title' => 'Subsection title',
-				'tooltip' => '',
-				'url' => $this->pureContentTitleFile . '?edit',
+/*	breadcrumb editing work - TODO
+			'breadcrumb' => array (
+				'title' => 'Breadcrumb',
+				'tooltip' => 'Edit or create the breadcrumb trail item for this folder',
+				// 'url' => $this->pureContentTitleFile . '?edit',
 				'administratorsOnly' => false,
 				'grouping' => 'Additional',
 				'check' => 'userHasPageCreationRightsHere',
 			),
 			
-			'sectionMenu' => array (
-				'title' => 'Section menu',
-				'tooltip' => '',
+			'submenu' => array (
+				'title' => 'Submenu',
+				'tooltip' => 'Edit or create the submenu for this main section',
 				#!# Add in the first directory at the start here
-				'url' => $this->pureContentMenuFile . '?edit',
+				// 'url' => $this->pureContentMenuFile . '?edit',
 				'administratorsOnly' => false,
 				'grouping' => 'Additional',
 				'check' => 'userHasPageCreationRightsHere',
 			),
-			*/
+*/
 			
 			'permissionMine' => array (
 				'title' => 'My areas',
@@ -1020,8 +1032,7 @@ class pureContentEditor
 				if ($this->livePage) {$versionMessage .= " You may wish instead to <a href=\"{$this->page}?{$action}=original\">{$action} a copy of the version which is currently live</a>.";}
 				break;
 			case 'live':
-				$versionMessage  = 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " a copy of the page which is currently <strong>live</strong>.";
-				if ($this->stagingPage) {$versionMessage .= " You may wish instead to <a href=\"{$this->page}" . ($action == 'edit' ? "?$action" : '') . "\">{$action} a copy of the latest submitted (but unapproved) version</a>.";}
+				if ($this->stagingPage) {$versionMessage .= 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " a copy of the page which is currently <strong>live</strong>. You may wish instead to <a href=\"{$this->page}" . ($action == 'edit' ? "?$action" : '') . "\">{$action} a copy of the latest submitted (but unapproved) version</a>.";}
 				break;
 			case 'particular':
 				# If the page is not the latest staging page available, provide a link to that
@@ -1035,6 +1046,9 @@ class pureContentEditor
 				if ($this->livePage) {$versionMessage .= " You may wish instead to <a href=\"{$this->page}?{$action}=original\">{$action} a copy of the version which is currently live</a>.";}
 				break;
 		}
+		
+		# End if no version message
+		if (!$versionMessage) {return;}
 		
 		# Construct the HTML
 		$html = "\n<p class=\"information\">Note: $versionMessage</p>";
@@ -1115,6 +1129,16 @@ class pureContentEditor
 		include ($this->editableFile);
 		echo "\n\n\n<div>";
 	}
+	
+	
+/*	breadcrumb editing work - TODO
+	# Function to provide breadcrumb trail editing
+	function breadcrumb ()
+	{
+		# Run the editing function
+		$this->edit ();
+	}
+*/
 	
 	
 	# Function to edit the page
@@ -1201,6 +1225,7 @@ class pureContentEditor
 						'directoryIndex' 		=> $this->directoryIndex,			// Default directory index name
 						'imageAlignmentByClass'	=> $this->imageAlignmentByClass,	// Replace align="foo" with class="foo" for images
 						'replacements'			=> $replacements,
+						'disallow'				=> ($this->allImagesRequireAltText ? array ('<img ([^>]*)alt=""([^>]*)>' => 'All images must have alternative text supplied, for accessibility reasons. Please correct this by right-clicking on the image, selecting \'Image Properties\' and entering a description of the image in the field marked \'Alternative Text\'.') : false),	// Images without alternative text
 					));
 				}
 		}
@@ -1468,7 +1493,7 @@ class pureContentEditor
 		# Merge, unique and sort the list
 		$currentFiles = array_merge ($currentFilesLive, $currentFilesStaging);
 		$currentFiles = array_keys ($currentFiles);
-		ksort ($currentFiles);
+		sort ($currentFiles);
 		
 		# Return the list
 		return $currentFiles;
@@ -3164,7 +3189,6 @@ class pureContentEditor
 # Ability to add a permission directly when adding a user rather than using two stages (and hence two e-mails)
 # BUG: _fckeditor being appended to images/links in some cases
 # Moderation should cc: other administrators (not yourself though) when a page is approved
-# Get rid of 'Note: You are browsing a copy of the page which is currently live' message when that's the only one
 # Make /page.html rights the default when on a section page rather than an index page
 # Enable creation of .title.txt files
 # Sort by ... for reviewing
@@ -3177,7 +3201,6 @@ class pureContentEditor
 # Option to ban top-level _directory_ creation as well as files
 # Force .menu.html links to be absolute
 # Less ugly e-mail title
-# Replace <br /></h1> with </h1> - seems a common problem
 # 'Mail all users' function (complete with "are you sure you want to?" confirmation)
 # [New] symbol to mark when a page is new rather than updated
 # Lookup-enabling interface for auto permissions
