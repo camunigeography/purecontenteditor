@@ -70,7 +70,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.0.7';
+	var $version = '1.0.8';
 	
 	
 	# Constructor
@@ -1692,7 +1692,7 @@ class pureContentEditor
 		
 		# Show the table of current users
 		echo "\n<p class=\"information\">The following are currently registered as users of the editing system. To edit a user's details, click on their username.</p>";
-		echo application::dumpDataToTable ($usersFormatted);
+		echo application::htmlTable ($usersFormatted);
 	}
 	
 	
@@ -2078,7 +2078,7 @@ class pureContentEditor
 			return;
 		}
 		
-		# Start a table of data; NB This way is better in this instance than using dumpDataToTable (), as the data contains HTML which will have htmlentities () applied;
+		# Start a table of data; NB This way is better in this instance than using htmlTable (), as the data contains HTML which will have htmlentities () applied;
 		$html  = "\n<p class=\"information\">The following permissions are currently assigned:</p>";
 		$html .= "\n" . '<table class="lines">';
 		$html .= "\n\t" . '<tr>';
