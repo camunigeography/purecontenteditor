@@ -70,7 +70,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.0.8';
+	var $version = '1.0.9';
 	
 	
 	# Constructor
@@ -1026,24 +1026,27 @@ class pureContentEditor
 	{
 		# Define the message
 		$versionMessage  = '';
+		$addWarning = false;
 		switch ($this->pageToUse) {
 			case 'staging':
-				$versionMessage  = 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " a copy of a version of the page (saved at " . $this->convertTimestamp ($this->submissions[$this->stagingPage]['timestamp']) . " by " . $this->convertUsername ($this->submissions[$this->stagingPage]['username']) . ') which is currently <strong>not yet approved</strong> but is the latest version available.';
-				if ($this->livePage) {$versionMessage .= " You may wish instead to <a href=\"{$this->page}?{$action}=original\">{$action} a copy of the version which is currently live</a>.";}
+				$versionMessage  = 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " an unapproved edition of this page (<span title=\"(saved at " . $this->convertTimestamp ($this->submissions[$this->stagingPage]['timestamp']) . " by " . $this->convertUsername ($this->submissions[$this->stagingPage]['username']) . ')">hover here for details</span>), the latest version available.';
+				if ($this->livePage) {$versionMessage .= "<br />You can <a href=\"{$this->page}?{$action}=original\">{$action} from the live version</a> instead.";}
 				break;
 			case 'live':
-				if ($this->stagingPage) {$versionMessage .= 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " a copy of the page which is currently <strong>live</strong>. You may wish instead to <a href=\"{$this->page}" . ($action == 'edit' ? "?$action" : '') . "\">{$action} a copy of the latest submitted (but unapproved) version</a>.";}
+				$addWarning = true;
+				if ($this->stagingPage) {$versionMessage .= 'You are not ' . str_replace ('browse', 'brows', "{$action}ing") . " from the latest version, but the currently-live version instead.<br />You may want to <a href=\"{$this->page}" . ($action == 'edit' ? "?$action" : '') . "\">{$action} from the latest submitted (but unapproved) version</a> instead.";}
 				break;
 			case 'particular':
 				# If the page is not the latest staging page available, provide a link to that
+				$versionMessage  = 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " an unapproved edition of this page (<span title=\"(saved at " . $this->convertTimestamp ($this->submissions[$this->stagingPage]['timestamp']) . " by " . $this->convertUsername ($this->submissions[$this->stagingPage]['username']) . ')">hover here for details</span>).';
 				if ($this->particularPage != $this->stagingPage) {
+					$addWarning = true;
 					$attributes = $this->submissions[$this->stagingPage];
 					$location = $attributes['directory'] . $attributes['filename'];
-					$versionMessage  = "<strong>A <a" . ($this->reviewPagesOpenNewWindow ? ' title="Link opens in a new window" target="_blank"': '') . " href=\"$location?review={$this->stagingPage}\">later version of this file</a> exists</strong>. ";
+					$versionMessage .= "<br /><strong>A <a" . ($this->reviewPagesOpenNewWindow ? ' title="Link opens in a new window" target="_blank"': '') . " href=\"$location?review={$this->stagingPage}\">later version of this page</a> exists</strong>.";
+				} else {
+					if ($this->livePage) {$versionMessage .= "<br />You can <a href=\"{$this->page}?{$action}=original\">{$action} from the live version</a> instead.";}
 				}
-				$versionMessage  .= 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " a copy of a version of the page (saved at " . $this->convertTimestamp ($this->submissions[$this->particularPage]['timestamp']) . " by " . $this->convertUsername ($this->submissions[$this->particularPage]['username']) . ') which is currently not yet approved.';
-				# If there is a live page, provide a link to that too
-				if ($this->livePage) {$versionMessage .= " You may wish instead to <a href=\"{$this->page}?{$action}=original\">{$action} a copy of the version which is currently live</a>.";}
 				break;
 		}
 		
@@ -1051,7 +1054,7 @@ class pureContentEditor
 		if (!$versionMessage) {return;}
 		
 		# Construct the HTML
-		$html = "\n<p class=\"information\">Note: $versionMessage</p>";
+		$html = "\n<p" . ($addWarning ? ' class="information"' : '') . '>' . ($addWarning ? '<strong>Warning</strong>' : 'Note') . ": {$versionMessage}</p>";
 		
 		# Return the HTML
 		return $html;
@@ -1163,8 +1166,13 @@ class pureContentEditor
 			'nullText' => 'Select which administrator to inform of this submission:',
 		));
 		
+		# Determine if the page is new
+		#!# This is a poor check and should instead be determined programmatically, e.g. from the URL
+		$pageIsNew = ($this->newPageTemplate == $this->editableFileContents);
+		
 		# Give a message for what file is being edited, and if necessary a PHP care warning
-		$form->heading ('', $this->versionMessage (__FUNCTION__) . ($this->pageContainsPhp ? "</p>\n<p class=\"information\">Take care when editing this page as it contains special PHP code." : ''));
+		$heading = ($pageIsNew ? '' : $this->versionMessage (__FUNCTION__)) . ($this->pageContainsPhp ? "</p>\n<p class=\"information\">Take care when editing this page as it contains special PHP code." : '');
+		if ($heading) {$form->heading ('', $heading);}
 		
 		# Give the correct type of editing box
 		switch ($this->typeOfFile) {
@@ -1309,8 +1317,11 @@ class pureContentEditor
 			}
 		}
 		
+		# Get the template in use
+		$template = $this->newPageTemplate;
+		
 		# Delete the template if it is one
-		if ($pageContentsIsTemplate = (md5 ($this->editableFileContents) == md5 ($this->newPageTemplate))) {
+		if ($pageContentsIsTemplate = (md5 ($this->editableFileContents) == md5 ($template))) {
 			if (!@unlink ($this->editableFile)) {
 				$this->reportErrors ('There was a problem deleting the template file.', "The filename was {$this->editableFile} .");
 				return false;
@@ -1416,7 +1427,7 @@ class pureContentEditor
 		$this->logChange ("Created folder {$this->currentDirectory}{$new}/");
 		
 		# Create the title file
-		$titleFileLocation = $new . $this->pureContentTitleFile;
+		$titleFileLocation = $this->filestoreRoot . $this->currentDirectory . $new . '/' . $this->pureContentTitleFile;
 		if (!application::createFileFromFullPath ($titleFileLocation, $result['title'], $addStamp = true)) {
 			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the title file in the filestore; the new index page has also not been created.');
 			return false;
@@ -1425,9 +1436,12 @@ class pureContentEditor
 		# Log the change
 		$this->logChange ("Created title file {$this->currentDirectory}{$new}{$this->pureContentTitleFile}");
 		
+		# Determine the template
+		$template = $this->newPageTemplate;
+		
 		# Create the front page
-		$titleFileLocation = $new . $this->directoryIndex;
-		if (!application::createFileFromFullPath ($titleFileLocation, $this->newPageTemplate, $addStamp = true)) {
+		$frontPageLocation = $this->filestoreRoot . $this->currentDirectory . $new . '/' . $this->directoryIndex;
+		if (!application::createFileFromFullPath ($frontPageLocation, $template, $addStamp = true)) {
 			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new directory index in the filestore.');
 			return false;
 		}
@@ -1546,32 +1560,34 @@ class pureContentEditor
 			$form->heading ('', "<p class=\"information\">This section currently contains no front page ({$this->directoryIndex}). You are required to create one before proceeding further.</p>");
 		}
 		
-		# Guideline text
-		$form->heading ('', "
-			<h2>Important guidelines/rules</h2>
-			<ul class=\"spaced\">
-				<li>When creating new pages, only <strong>lowercase alphanumeric characters</strong> are allowed (spaces, underscores and hyphens are not).</li>
-				<li>The page name must <strong>end with .html</strong> .</li>
-				<li>The total length (including the suffix .html) can be a <strong>maximum of {$this->maximumFileAndFolderNameLength} characters</strong>.</li>
-				<li>It is important that you think about <strong>permanence</strong> when creating new pages. For instance, if creating a new page to hold phone numbers, don't create a page called 'phonenumbers'; instead, create a page called 'contacts' as that gives more flexibility in the long-run.</li>
-				<li>Make names <strong>guessable</strong> and <strong>self-explanatory</strong>, so <strong>avoid abbreviations</strong>, and choose words that tend towards the generic. If you can't think of a single word that describes the new section, it is acceptable in these few cases to run two words together, e.g. 'annualreports'.</li>
-			</ul>
-			<p>You are currently in the location: <strong><a href=\"{$this->currentDirectory}{$this->directoryIndex}\">{$this->currentDirectory}</a></strong></p>
-		");
+		# Determine if the name should be editable
+		$nameIsEditable = ($this->directoryContainsIndex);
+		
+		# Show the guideline text if it's editable
+		if ($nameIsEditable) {
+			$form->heading ('', "
+				<h2>Important guidelines/rules</h2>
+				<ul class=\"spaced\">
+					<li>When creating new pages, only <strong>lowercase alphanumeric characters</strong> are allowed (spaces, underscores and hyphens are not).</li>
+					<li>The page name must <strong>end with .html</strong> .</li>
+					<li>The total length (including the suffix .html) can be a <strong>maximum of {$this->maximumFileAndFolderNameLength} characters</strong>.</li>
+					<li>It is important that you think about <strong>permanence</strong> when creating new pages. For instance, if creating a new page to hold phone numbers, don't create a page called 'phonenumbers'; instead, create a page called 'contacts' as that gives more flexibility in the long-run.</li>
+					<li>Make names <strong>guessable</strong> and <strong>self-explanatory</strong>, so <strong>avoid abbreviations</strong>, and choose words that tend towards the generic. If you can't think of a single word that describes the new section, it is acceptable in these few cases to run two words together, e.g. 'annualreports'.</li>
+				</ul>
+				<p>You are currently in the location: <strong><a href=\"{$this->currentDirectory}{$this->directoryIndex}\">{$this->currentDirectory}</a></strong></p>
+			");
+		}
 		
 		# Page name
-		if (!$this->directoryContainsIndex) {
-			$form->heading ('', "New page name: <strong>{$this->directoryIndex}</strong>");
-			$form->hidden (array ('values' => array ('new' => $this->directoryIndex)));	// Hidden field is bogus
-		} else {
-			$form->input (array (
-				'name'			=> 'new',
-				'title'					=> 'New page name',
-				'description'	=> 'Please follow the guidelines above when entering the new page name',
-				'required'				=> true,
-				'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}.html$",
-			));
-		}
+		$form->input (array (
+			'name'			=> 'new',
+			'title'					=> 'New page filename',
+			'description'	=> ($nameIsEditable ? 'Please follow the guidelines above when entering the new filename' : ''),
+			'required'				=> true,
+			'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}.html$",
+			'default'  => $newPageName = ($nameIsEditable ? '' : $this->directoryIndex),
+			'editable' => $nameIsEditable,
+		));
 		
 		# Show the form and get any results
 		$result = $form->processForm ();
@@ -1582,17 +1598,18 @@ class pureContentEditor
 			return false;
 		}
 		
-		# Get the new folder location
-		$new = ($this->directoryContainsIndex ? $result['new'] : $this->directoryIndex);
-		
 		# If the file exists, show a warning message and do not proceed
-		if (in_array ($new, $currentPages)) {
-			echo "\n<p class=\"failure\">Sorry, that page name ($new) already <a href=\"$new\">exists</a>. Please <a href=\"{$this->page}?" . __FUNCTION__ . '">go back</a> and try again.</p>';
+		if (in_array ($result['new'], $currentPages)) {
+			echo "\n<p class=\"failure\">Sorry, that page name ({$result['new']}) already <a href=\"{$result['new']}\">exists</a>. Please <a href=\"{$this->page}?" . __FUNCTION__ . '">go back</a> and try again.</p>';
 			return false;
 		}
 		
+		#!# There is a lot of duplication here - refactor out the creation of a new page
+		
+		# Determine the path
+		$newFile = $this->currentDirectory . $result['new'];
+		
 		# Create the file
-		$newFile = $this->currentDirectory . $new;
 		if (!application::createFileFromFullPath ($this->filestoreRoot . $newFile, $this->newPageTemplate, $addStamp = true)) {
 			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new file in the filestore.', "The filename was {$this->filestoreRoot}{$newFile} .");
 			return false;
@@ -1602,7 +1619,7 @@ class pureContentEditor
 		$this->logChange ("Created template page {$newFile}");
 		
 		# Notionally return true
-		echo "<p class=\"success\">The new file was successfully created. You should now <a href=\"$new?edit\">edit the new page</a>.</p>";
+		echo "<p class=\"success\">The new file was successfully created. You can now <a href=\"{$result['new']}?edit\">edit the new page</a>.</p>";
 		return true;
 	}
 	
@@ -1677,8 +1694,11 @@ class pureContentEditor
 	
 	
 	# Function to list the users
-	function userList ()
+	function userList ($forceReload = false)
 	{
+		# Force a reload of the list if necessary
+		if ($forceReload) {$this->users = $this->users ();}
+		
 		# Change the administrator indication
 		$usersFormatted = array ();
 		foreach ($this->users as $user => $attributes) {
@@ -1981,7 +2001,7 @@ class pureContentEditor
 		# Signal success then show the new list of users
 		echo "\n<p class=\"success\">The user {$result['username']}" . ($permissions ? ' and their permissions were' : ' was') . " successfully deleted.</p>";
 		$this->sendMail ($result['username'], 'You no longer have access to the editing system.' . ($result['message'] ? "\n\n{$result['message']}" : ''));
-		$this->userList ();
+		$this->userList (true);
 		return true;
 	}
 	
@@ -2150,7 +2170,7 @@ class pureContentEditor
 		foreach ($scopes as $scope => $description) {
 			$scopeList[$scope] = "$description - $scope";
 		}
-		$last = $scope;
+		$defaultScope = $this->currentDirectory . '*';
 		
 		# Create the form itself
 		$form = new form (array (
@@ -2176,7 +2196,7 @@ class pureContentEditor
 		    'values'            => $scopeList,
 		    'title'                    => 'Allow changes to', 
 		    'required'        => 1, 
-		    'default'        => $last,
+		    'default'        => $defaultScope,
 		));
 /*
 		$form->checkboxes (array (
@@ -2566,7 +2586,7 @@ class pureContentEditor
 	function convertTimestamp ($timestamp, $includeTime = true)
 	{
 		# Convert the timestamp
-		$timestamp = preg_replace ('/-(\d{2})(\d{2})(\d{2})$/', ' $1:$2:$3', $timestamp);
+		$timestamp = preg_replace ('/-(\d{2})(\d{2})(\d{2})$/D', ' $1:$2:$3', $timestamp);
 		
 		# Determine the output string to use
 		$format = 'l jS M Y' . ($includeTime ? ', g.ia' : '');	// Previously: ($includeTime ? 'g.ia \o\n ' : '') . 'jS M Y';
@@ -2735,6 +2755,7 @@ class pureContentEditor
 				# Confirm success and relist the submissions if appropriate
 				echo "\n<p class=\"success\">The file $fileLocation was deleted successfully.";
 				echo "\n" . '<p><a href="/?review"><strong>Please click here to continue</strong></a>' . ($this->submissions ? ', or continue moderating pages.' : '.') . '</p>';
+				#!# Reloading is failing here sometimes
 				if ($this->submissions) {echo $this->listSubmissions ($reload = false);}
 				echo "\n<hr />";
 				
@@ -3205,5 +3226,6 @@ class pureContentEditor
 # [New] symbol to mark when a page is new rather than updated
 # Lookup-enabling interface for auto permissions
 # Have a single 'master' port so that links are correct when running off two ports at once (or sort out /login ...)
+# Messaging facility should state which page the message is being sent on
 
 ?>
