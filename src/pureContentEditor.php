@@ -28,6 +28,7 @@ class pureContentEditor
 		'editHostName' => NULL,					// Hostname of the editing site
 		'editHostPort' => 80,					// Port number of the editing site
 		'liveSiteUrl' => NULL,					// Hostname of the live site
+		'websiteName' => false,					// Name of the website, e.g. 'Department of XYZ' which proceeds 'website editing facility'
 		'liveSiteRoot' => NULL,					// Directory where the main site files are located
 		'filestoreRoot' => NULL,				// Directory where unapproved files are stored
 		'serverAdministrator' => NULL,			// E-mail of the server administrator
@@ -70,7 +71,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.0.9';
+	var $version = '1.0.10';
 	
 	
 	# Constructor
@@ -274,20 +275,6 @@ class pureContentEditor
 		# Define the user and permissions database locations
 		$this->userDatabase = $this->filestoreRoot . $this->userDatabase;
 		$this->permissionsDatabase = $this->filestoreRoot . $this->permissionsDatabase;
-		
-		# Ensure PHP_EOL is defined (taken from http://cvs.php.net/co.php/pear/PHP_Compat/Compat/Constant/PHP_EOL.php?r=1.2 )
-		if (!defined ('PHP_EOL')) {
-			switch (strtoupper (substr (PHP_OS, 0, 3))) {
-				case 'WIN':	// Windows
-					define ('PHP_EOL', "\r\n");
-		            break;
-		        case 'DAR':	// Mac (Darwin)
-		            define ('PHP_EOL', "\r");
-		            break;
-		        default:	// Unix
-		            define ('PHP_EOL', "\n");
-		    }
-		}
 		
 		# Ensure the permissions database exists
 		if (!file_exists ($this->permissionsDatabase)) {
@@ -602,6 +589,7 @@ class pureContentEditor
 	function administrators () {
 		
 		# Determine the administrators
+		$administrators = array ();
 		foreach ($this->users as $user => $attributes) {
 			if ($attributes['Administrator']) {
 				$administrators[] = $user;
@@ -609,7 +597,7 @@ class pureContentEditor
 		}
 		
 		# Throw an error if there are no administrators
-		if (!isSet ($administrators)) {
+		if (!$administrators) {
 			$this->reportErrors ('There are no administrators assigned. Somehow the user database has been edited incorrectly. The administrator should reset the user database or edit it directly to ensure there is an administrator.');
 			return false;
 		}
@@ -857,7 +845,7 @@ class pureContentEditor
 			),
 			
 			'help' => array (
-				'title' => 'Help/about',
+				'title' => 'Tips/help',
 				'tooltip' => '',
 				'administratorsOnly' => false,
 				'grouping' => 'Additional',
@@ -983,9 +971,10 @@ class pureContentEditor
 	function logChange ($message)
 	{
 		# Prepend the message
-		$message = $this->makeTimestamp () . ",{$this->user}," . $message . PHP_EOL;
+		$message = $this->makeTimestamp () . ",{$this->user}," . $message . "\r\n";
 		
 		# Log the change
+		#!# Move to checking writability first then remove the warning here
 		if (!application::writeDataToFile ($message, $this->filestoreRoot . $this->changelog)) {
 			$this->reportErrors ('There was a problem logging this change.', "The log file is at {$this->filestoreRoot}{$this->changelog} .");
 		}
@@ -1074,7 +1063,7 @@ class pureContentEditor
 	{
 		# Create the logout link
 		echo "\n\n" . '<div id="purecontenteditorhelp">';
-		echo "\n<h1>Help/about</h1>";
+		echo "\n<h1>Tips/help/about</h1>";
 		echo "\n<p>Welcome to the pureContentEditor! Use of this system is intended to be largely self-explanatory: you can browse around the site as normal, and perform various actions using the menu buttons above.</p>";
 		echo "\n<h2>Tips</h2>";
 		echo "\n" . '<p>A <a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf" target="_blank">tip sheet</a> can be printed off and stuck next to your computer.</p>';
@@ -1150,9 +1139,9 @@ class pureContentEditor
 		# Start the HTML, enclosing it in a div for CSS styling purposes, echoing it directly because of the form
 		echo "\n\n<div id=\"editor\">";
 		
-		# Determine whether the user can make files live immediately
+		# Determine whether the user can make files live directly
 		#!# Add more options based on the permissions database
-		$userCanMakeFilesLiveImmediately = $this->userIsAdministrator;
+		$userCanMakeFilesLiveDirectly = $this->userIsAdministrator;
 		
 		# Create the form itself
 		$form = new form (array (
@@ -1161,7 +1150,7 @@ class pureContentEditor
 			'displayTitles' => ($this->typeOfFile == 'titleFile'),
 			'displayDescriptions' => ($this->typeOfFile == 'titleFile'),
 			'displayColons' => true,
-			'submitButtonText' => 'Submit page for approval' . ($userCanMakeFilesLiveImmediately ? ' / Make live' : ''),
+			'submitButtonText' => 'Submit page for approval' . ($userCanMakeFilesLiveDirectly ? ' / Make live' : ''),
 			'formCompleteText' => false,
 			'nullText' => 'Select which administrator to inform of this submission:',
 		));
@@ -1239,20 +1228,20 @@ class pureContentEditor
 		}
 		
 		# Select the administrator to e-mail
-		$form->select (array ( 
-		    'name'            => 'administrators', 
-		    'values'            => $this->administratorSelectionList ($enableNoneOption = $userCanMakeFilesLiveImmediately),
-		    'title'                    => 'Administrator to inform', 
+		$form->select (array (
+		    'name'            => 'administrators',
+		    'values'            => $this->administratorSelectionList ($enableNoneOption = $userCanMakeFilesLiveDirectly),
+		    'title'                    => 'Administrator to inform',
 		    'required'        => 1,
-			'default' => ($userCanMakeFilesLiveImmediately ? '_none' : '_all'),
+			'default' => ($userCanMakeFilesLiveDirectly ? '_none' : '_all'),
 		));
 		
-		# Allow administrators to make live immediately
-		if ($userCanMakeFilesLiveImmediately) {
-			$makeAdministratorText = 'Make live immediately (do not add to approval list)';
+		# Allow administrators to make live directly
+		if ($userCanMakeFilesLiveDirectly) {
+			$makeAdministratorText = 'Make live directly (do not add to approval list)';
 			$form->checkboxes (array (
-			    'name'			=> 'preapprove', 
-			    'values'			=> array ($makeAdministratorText,), 
+			    'name'			=> 'preapprove',
+			    'values'			=> array ($makeAdministratorText,),
 			    'title'					=> $makeAdministratorText,
 			));
 		}
@@ -1261,20 +1250,21 @@ class pureContentEditor
 		echo "\n</div>";
 		
 		# Show and process the form; end if not submitted
-		if (!$result = $form->processForm ()) {return false;}
+		if (!$result = $form->process ()) {return false;}
 		
 		# Get the submitted content
 		$content = $result['content'];
 		
-		# Determine whether to approve immediately
-		$approveImmediately = ($userCanMakeFilesLiveImmediately ? $result['preapprove'][$makeAdministratorText] : false);
+		# Determine whether to approve directly
+		$approveDirectly = ($userCanMakeFilesLiveDirectly ? $result['preapprove'][$makeAdministratorText] : false);
 		
 		# Save the file to the filestore or the live site as appropriate
-		if ($approveImmediately) {
-			if (!$this->makeLive ($this->page, $content, $approveImmediately)) {
+		if ($approveDirectly) {
+			if (!$this->makeLive ($this->page, $content, $approveDirectly)) {
 				return false;
 			}
-			$message = "A page has immediately been made live at {$this->liveSiteUrl}{$this->page} .";
+			$message = "A page has been directly made live at:\n{$this->liveSiteUrl}" . $this->chopDirectoryIndex ($this->page);
+			$subjectSuffix = 'page directly made live';
 		} else {
 			
 			# Create the file by supplying the complete file location and filename
@@ -1287,7 +1277,8 @@ class pureContentEditor
 				$this->logChange ("Submitted {$this->page}");
 				
 				# Construct a confirmation message
-				$message = "A page has been submitted for the location {$this->page} . Please log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}{$this->page}?review=" . ereg_replace ('^' . $this->filestoreRoot, '', $filename);
+				$message = "A page has been submitted for the location:\n{$this->page}\n\nPlease log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}{$this->page}?review=" . ereg_replace ('^' . $this->filestoreRoot, '', $filename);
+				$subjectSuffix = 'page submitted for moderation';
 			}
 		}
 		
@@ -1310,10 +1301,10 @@ class pureContentEditor
 				case '_none':
 					break;
 				case '_all':
-					$this->sendMail ($this->administrators, $message);
+					$this->sendMail ($this->administrators, $message, $subjectSuffix);
 					break;
 				default:
-					$this->sendMail ($result['administrators'], $message);
+					$this->sendMail ($result['administrators'], $message, $subjectSuffix);
 			}
 		}
 		
@@ -1365,6 +1356,12 @@ class pureContentEditor
 		# Get the current folders for the live and staging areas
 		$currentFolders = $this->getCurrentFoldersHere ();
 		
+		# Define a regexp for the current page
+		$currentFoldersRegexp = $this->currentPagesFoldersRegexp ($currentFolders);
+		
+		# Hack to get the current page submitted, used for a link if necessary
+		$folderSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new']) . '/' : '');
+		
 		# Form for the new folder
 		$form = new form (array (
 			'displayDescriptions'	=> true,
@@ -1390,6 +1387,7 @@ class pureContentEditor
 			'description'	=> 'Please follow the guidelines above when entering the new folder name',
 			'required'				=> true,
 			'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}$",
+			'disallow' => ($currentFolders ? array ($currentFoldersRegexp => "Sorry, <a href=\"{$folderSubmitted}\">a folder of that name</a> already exists, as shown in the list below. Please try another.") : false),
 		));
 		
 		$form->input (array (
@@ -1400,7 +1398,7 @@ class pureContentEditor
 		));
 		
 		# Show the form and get any results
-		$result = $form->processForm ();
+		$result = $form->process ();
 		
 		# Show the folders which currently exist if there are any
 		if (!$result) {
@@ -1410,12 +1408,6 @@ class pureContentEditor
 		
 		# Get the new folder location
 		$new = $result['new'];
-		
-		# If the folder exists, show a warning message and do not proceed
-		if (in_array ($new, $currentFolders)) {
-			echo "\n<p class=\"failure\">Sorry, that folder name ($new) already <a href=\"$new/{$this->directoryIndex}\">exists</a>. Please <a href=\"{$this->page}?" . __FUNCTION__ . '">go back</a> and try again.</p>';
-			return false;
-		}
 		
 		# Create the directory
 		if (!$this->makeDirectory ($this->filestoreRoot . $this->currentDirectory . $new . '/')) {
@@ -1539,6 +1531,14 @@ class pureContentEditor
 	}
 	
 	
+	# Function to list current pages (or folders) as a regexp
+	function currentPagesFoldersRegexp ($currentPagesFolders)
+	{
+		# Return the result, returning false if there are none
+		return ($currentPagesFolders ? '^' . implode ('|', $currentPagesFolders) . '$' : false);
+	}
+	
+	
 	# Function to create a new page
 	function newPage ()
 	{
@@ -1578,6 +1578,12 @@ class pureContentEditor
 			");
 		}
 		
+		# Define a regexp for the current page
+		$currentPagesRegexp = $this->currentPagesFoldersRegexp ($currentPages);
+		
+		# Hack to get the current page submitted, used for a link if necessary
+		$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new']) : '');
+		
 		# Page name
 		$form->input (array (
 			'name'			=> 'new',
@@ -1587,20 +1593,15 @@ class pureContentEditor
 			'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}.html$",
 			'default'  => $newPageName = ($nameIsEditable ? '' : $this->directoryIndex),
 			'editable' => $nameIsEditable,
+			'disallow' => ($currentPages ? array ($currentPagesRegexp => "Sorry, <a href=\"{$pageSubmitted}\">a page of that name</a> already exists, as shown in the list below. Please try another.") : false),
 		));
 		
 		# Show the form and get any results
-		$result = $form->processForm ();
+		$result = $form->process ();
 		
 		# Show the folders which currently exist if there are any
 		if (!$result) {
 			echo $this->listCurrentResources ($currentPages, 'pages');
-			return false;
-		}
-		
-		# If the file exists, show a warning message and do not proceed
-		if (in_array ($result['new'], $currentPages)) {
-			echo "\n<p class=\"failure\">Sorry, that page name ({$result['new']}) already <a href=\"{$result['new']}\">exists</a>. Please <a href=\"{$this->page}?" . __FUNCTION__ . '">go back</a> and try again.</p>';
 			return false;
 		}
 		
@@ -1735,35 +1736,35 @@ class pureContentEditor
 		
 		# Widgets
 		$form->input (array (
-		    'name'            => 'Username', 
-		    'title'                    => "New user's username", 
+		    'name'            => 'Username',
+		    'title'                    => "New user's username",
 			'description' =>  "Usernames can only have lower-case alphanumeric characters and must be at least {$this->minimumUsernameLength} " . ($this->minimumUsernameLength == 1 ? 'character' : 'characters') . ' in length',
-		    'required'                => true, 
-		    'size'                => 10, 
-		    'maxlength'                => 10, 
+		    'required'                => true,
+		    'size'                => 10,
+		    'maxlength'                => 10,
 			'default' => ($firstRun ? $this->user : ''),
 			'regexp'				=> "^[a-z0-9]{{$this->minimumUsernameLength},}$",
 		));
 		$form->email (array (
-		    'name'            => 'E-mail', 
-		    'title'                    => 'E-mail address', 
-		    'required'                => true, 
+		    'name'            => 'E-mail',
+		    'title'                    => 'E-mail address',
+		    'required'                => true,
 		));
 		$form->input (array (
-		    'name'            => 'Forename', 
-		    'title'                    => 'Forename', 
-		    'required'                => true, 
+		    'name'            => 'Forename',
+		    'title'                    => 'Forename',
+		    'required'                => true,
 		));
 		$form->input (array (
-		    'name'            => 'Surname', 
-		    'title'                    => 'Surname', 
-		    'required'                => true, 
+		    'name'            => 'Surname',
+		    'title'                    => 'Surname',
+		    'required'                => true,
 		));
 		if (!$firstRun) {
-			$makeAdministratorText = 'Make administrator';
+			$makeAdministratorText = 'Administrator';
 			$form->checkboxes (array (
-			    'name'            => 'Administrator', 
-			    'values'            => array ($makeAdministratorText,), 
+			    'name'            => 'Administrator',
+			    'values'            => array ($makeAdministratorText,),
 			    'title'                    => 'Grant administrative rights?',
 				'description' =>  'Warning! This will give the right to approve pages, grant new users, etc.',
 			));
@@ -1771,7 +1772,7 @@ class pureContentEditor
 		$form->textarea ($this->additionalMessageWidget);
 		
 		# Show the form and get any results or end here
-		if (!$result = $form->processForm ()) {return;}
+		if (!$result = $form->process ()) {return;}
 		
 		# If the user is already in the database, end here
 		if (isSet ($this->users[$result['Username']])) {
@@ -1788,6 +1789,8 @@ class pureContentEditor
 		# Insert the data into the CSV file
 		if (!csv::addItem ($this->userDatabase, $newUser, $this->databaseTimestampingMode)) {return false;}
 		
+		#!# If making a user an administrator, any existing permissions should be deleted
+		
 		# Log the change
 		$this->logChange ("Created new user {$result['Username']} with " . ($result['Administrator'] ? 'administrative' : 'editing') . " rights");
 		
@@ -1798,7 +1801,7 @@ class pureContentEditor
 		$message .= "\n\nYour username is: {$result['Username']}";
 		$message .= "\n\n" . ($result['Administrator'] ? 'You have been granted administrative rights, so you have editable access across the site rather than access to particular areas. You can also create/administer users and permissions.' : 'You will be separately advised of the area(s) of the site which you have permission to alter.');
 		$message .= ($result['message'] ? "\n\n{$result['message']}" : '');
-		$this->sendMail ($result['Username'], $message);
+		$this->sendMail ($result['Username'], $message, $subjectSuffix = 'you now have access');
 	}
 	
 	
@@ -1825,66 +1828,57 @@ class pureContentEditor
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
 			'formCompleteText' => false,
-			'submitTo' => "{$this->page}?" . __FUNCTION__ . "=$username",
+			'submitTo' => "{$this->page}?" . __FUNCTION__ . "={$username}",
 		));
 		
-		# Make the username non-editable (NB the spaces are a layout cheat)
-		$form->heading ('', "Existing user's username:&nbsp;&nbsp;&nbsp;&nbsp;<strong>$this->attributes</strong>");
-		$form->hidden (array ( 
-		    'values'            => array ( 'Username' => $username, ), 
-		    'title'                    => "Existing user's username:", 
+		# Form widgets
+		$form->select (array (
+		    'name'		=> 'Username',
+			'values'	=> array ($username),
+		    'title'		=> "Existing user's username",
+			'default'	=> $username,
+			'required'	=> true,
+			'editable'	=> false,
 		));
 		$form->email (array (
-		    'name'            => 'E-mail', 
-		    'title'                    => 'E-mail address', 
-		    'required'                => true, 
+		    'name'            => 'E-mail',
+		    'title'                    => 'E-mail address',
+		    'required'                => true,
 			'default' => $this->users[$username]['E-mail'],
 		));
 		$form->input (array (
-		    'name'            => 'Forename', 
-		    'title'                    => 'Forename', 
-		    'required'                => true, 
+		    'name'            => 'Forename',
+		    'title'                    => 'Forename',
+		    'required'                => true,
 			'default' => $this->users[$username]['Forename'],
 		));
 		$form->input (array (
-		    'name'            => 'Surname', 
-		    'title'                    => 'Surname', 
-		    'required'                => true, 
+		    'name'            => 'Surname',
+		    'title'                    => 'Surname',
+		    'required'                => true,
 			'default' => $this->users[$username]['Surname'],
 		));
 		
 		# If the current user selected themselves as a user, do not allow them to demote themselves
-		if ($this->user == $username) {
-			$form->heading ('', '(Administrators cannot demote themselves from being an administrator.)');
-		} else {
-			$makeAdministratorText = 'Make administrator';
-			$form->checkboxes (array (
-			    'name'            => 'Administrator', 
-			    'values'            => array ($makeAdministratorText,), 
-			    'title'                    => 'Grant administrative rights?',
-				'description' =>  'Warning! This will give the right to approve pages, grant new users, etc.',
-				'default' => ($this->users[$username]['Administrator'] ? $makeAdministratorText : ''),
-			));
-		}
+		$makeAdministratorText = 'Administrator';
+		$form->checkboxes (array (
+		    'name'            => 'Administrator',
+		    'values'            => array ($makeAdministratorText,),
+		    'title'                    => 'Grant administrative rights?',
+			#!# Review this restriction
+			'description' =>  ($this->user == $username ? 'Note that administrators cannot demote themselves but must get another administrator to do this.' : 'Warning! This will give the right to approve pages, grant new users, etc.'),
+			'default' => ($this->users[$username]['Administrator'] ? $makeAdministratorText : ''),
+			'editable' => ($this->user != $username),
+		));
 		
 		# Additional message
 		$form->textarea ($this->additionalMessageWidget);
 		
 		# Show the form and get any results or end here
-		if (!$result = $form->processForm ()) {return;}
-		
-		# Convert the hidden field
-		$result['Username'] = $result['hidden']['Username'];
-		unset ($result['hidden']);
-		
-		# Ensure the username matches the posted one
-		if ($result['Username'] != $username) {
-			echo "\n<p class=\"failure\">The selected username does not match the one posted in the form.</p>";
-			return false;
-		}
+		if (!$result = $form->process ()) {return;}
 		
 		# Flatten the checkbox result
-		$result['Administrator'] = (($this->user == $username) ? true : ($result['Administrator']['Make administrator'] ? '1' : '0'));
+		$result['Administrator'] = (($this->user == $username) ? true : ($result['Administrator'][$makeAdministratorText] ? '1' : '0'));
 		
 		# Arrange the array into a keyed result
 		$user[$username] = $result;
@@ -1901,10 +1895,10 @@ class pureContentEditor
 		# Flag changes of administrative status, reloading the database at this point
 		if ($this->users[$username]['Administrator'] != $result['Administrator']) {
 			echo "\n<p class=\"success\">The user " . ($result['Administrator'] ? 'now' : 'no longer') . ' has administrative rights.</p>';
-			$message = ($result['Administrator'] ? 'You have been granted administrative rights, so you have editable access across the site rather than access to particular areas. You can also create/administer users and permissions.' : 'You no longer have administrative rights.') . ($result['message'] ? "\n\n{$result['message']}" : '');
+			$message = ($result['Administrator'] ? 'You have been granted administrative rights, so you have editable access across the site rather than access to particular areas. You can also create/administer users and permissions.' : 'Your administrator-level permission for the editing system has now been ended, so you are now an ordinary user. Thank you for your help with administering the website.') . ($result['message'] ? "\n\n{$result['message']}" : '');
 			
 			$this->users = $this->users ();
-			$this->sendMail ($username, $message);
+			$this->sendMail ($username, $message, $subjectSuffix = 'change of administrator rights');
 		}
 	}
 	
@@ -1941,28 +1935,26 @@ class pureContentEditor
 		
 		# Widgets
 		$form->heading ('', "<p>Note: deleting a user will also revoke any permissions they have.</p>");
-		$form->select (array ( 
-		    'name'            => 'username', 
-		    'values'            => $deletableUsers, 
-		    'title'                    => 'User to delete', 
-		    'required'        => 1, 
+		$form->select (array (
+		    'name'            => 'username',
+		    'values'            => $deletableUsers,
+		    'title'                    => 'User to delete',
+		    'required'        => 1,
+			'description'	=> ($this->usersWithUnapprovedSubmissions ? "If the user you are wanting to delete is not listed, it is because they have <a href=\"{$this->page}?review\">submissions awaiting approval</a>." : ''),
 		));
 		$form->input (array (
-		    'name'            => 'confirmation', 
+		    'name'            => 'confirmation',
 		    'title'                    => 'Confirm username',
 			'description'	=> 'Please type in the username for confirmation, to prevent accidental deletions',
 		    'required'                => true,
 		));
 		$form->textarea ($this->additionalMessageWidget);
 		
-		# Show the form and get any results or end here
-		if (!$result = $form->processForm ()) {return;}
+		# Ensure username matching
+		$form->validation ('same', array ('username', 'confirmation'));
 		
-		# If there is no username match, force re-entry
-		if ($result['username'] != $result['confirmation']) {
-			echo "\n<p class=\"failure\">The usernames you entered did not match. Please <a href=\"{$this->page}?" . __FUNCTION__ . '">go back</a> and try again.</p>';
-			return false;
-		}
+		# Show the form and get any results or end here
+		if (!$result = $form->process ()) {return;}
 		
 		# Check that there is such a user
 		if (!array_key_exists ($result['username'], $this->users)) {
@@ -2000,7 +1992,7 @@ class pureContentEditor
 		
 		# Signal success then show the new list of users
 		echo "\n<p class=\"success\">The user {$result['username']}" . ($permissions ? ' and their permissions were' : ' was') . " successfully deleted.</p>";
-		$this->sendMail ($result['username'], 'You no longer have access to the editing system.' . ($result['message'] ? "\n\n{$result['message']}" : ''));
+		$this->sendMail ($result['username'], 'Your access to the editing system has now been ended. Thank you for your help with the website.' . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'access ended');
 		$this->userList (true);
 		return true;
 	}
@@ -2075,7 +2067,7 @@ class pureContentEditor
 	# Function to create a list of permissions available
 	function scopeSelectionList ()
 	{
-		# Compile the permissions list 
+		# Compile the permissions list
 		$permissions = array ();
 		if ($this->permissions) {
 			foreach ($this->permissions as $key => $attributes) {
@@ -2108,7 +2100,7 @@ class pureContentEditor
 		$html .= "\n\t\t" . '<th>Can make changes to:</th>';
 		if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<th>Date limitation?</th>';}
 /*
-		$html .= "\n\t\t" . '<th>Can make pages live immediately?</th>';
+		$html .= "\n\t\t" . '<th>Can make pages live directly?</th>';
 */
 		$html .= "\n\t" . '</tr>';
 		
@@ -2138,7 +2130,7 @@ class pureContentEditor
 	function chopDirectoryIndex ($location)
 	{
 		# Return the value
-		return ereg_replace ("/{$this->directoryIndex}\$", '/', $location);
+		return ereg_replace ("/{$this->directoryIndex}$", '/', $location);
 	}
 	
 	
@@ -2184,57 +2176,56 @@ class pureContentEditor
 		));
 		
 		# Do not include administrators, as they do not need permissions
-		$form->select (array ( 
-		    'name'            => 'username', 
-		    'values'            => $users, 
-		    'title'                    => 'Allow user', 
+		$form->select (array (
+		    'name'            => 'username',
+		    'values'            => $users,
+		    'title'                    => 'Allow user',
 		    'required'        => 1,
 			'default' => (($user && isSet ($users[$user])) ? $user : ''),
 		));
-		$form->select (array ( 
-		    'name'            => 'scope', 
+		$form->select (array (
+		    'name'            => 'scope',
 		    'values'            => $scopeList,
-		    'title'                    => 'Allow changes to', 
-		    'required'        => 1, 
+		    'title'                    => 'Allow changes to',
+		    'required'        => 1,
 		    'default'        => $defaultScope,
 		));
 /*
 		$form->checkboxes (array (
-		    'name'            => 'Self-approval', 
-		    'values'            => array ($selfapprovalText = 'User can make pages live immediately'), 
-		    'title'                    => 'Allow user to make pages live immediately',
+		    'name'            => 'Self-approval',
+		    'values'            => array ($selfapprovalText = 'User can make pages live directly'),
+		    'title'                    => 'Allow user to make pages live directly',
 		));
 */
 		if (!$this->disableDateLimitation) {
-			$form->datetime (array ( 
+			$form->datetime (array (
 			    'name'            => 'Startdate',
-			    'title'                    => 'Optional availability start date', 
-			    'level'                    => 'date', 
-			)); 
-			$form->datetime (array ( 
-			    'name'            => 'Enddate', 
-			    'title'                    => 'Optional availability end date', 
-			    'level'                    => 'date', 
+			    'title'                    => 'Optional availability start date',
+			    'level'                    => 'date',
 			));
+			$form->datetime (array (
+			    'name'            => 'Enddate',
+			    'title'                    => 'Optional availability end date',
+			    'level'                    => 'date',
+			));
+			$this->checkStartEndDate ($form);
 		}
 		$form->textarea ($this->additionalMessageWidget);
 		
-		# Show the form and get any results or end here
-		if (!$result = $form->processForm ()) {return;}
-		
-		# If the key is already in the database, end here
-		$key = "{$result['username']}:{$result['scope']}";
-		if (isSet ($this->permissions[$key])) {
-			echo "\n<p class=\"failure\">The permission for {$result['username']} to amend {$result['scope']} already exists and so was not added.</p>";
-			return false;
-		}
-		
-		# Check the start and end dates
-		if (!$this->disableDateLimitation) {
-			if (!$this->checkStartEndDate ($result['Startdate'], $result['Enddate'])) {
-				return false;
+		# Check the key is not already in the database
+		if ($unfinalisedData = $form->getUnfinalisedData ()) {
+			if (isSet ($unfinalisedData['username'][0]) && isSet ($unfinalisedData['scope'][0])) {
+				$key = "{$unfinalisedData['username'][0]}:{$unfinalisedData['scope'][0]}";
+				if (isSet ($this->permissions[$key])) {
+					$form->registerProblem ('permissionexists', "The permission for user <em>{$unfinalisedData['username'][0]}</em> to amend <em>{$unfinalisedData['scope'][0]}</em> already exists.");
+				}
 			}
 		}
+		
+		# Show the form and get any results or end here
+		if (!$result = $form->process ()) {return;}
+		
+		#!# Check needed if an encompassing permission higher up already exists
 		
 		# Arrange the array
 		$newPermission[$key] = array (
@@ -2260,38 +2251,43 @@ class pureContentEditor
 		
 		# Signal success
 		echo "\n<p class=\"success\">The permission {$result['scope']} for the user {$result['username']} was successfully added.</p>";
-		$this->sendMail ($result['username'], "You have been granted permission to make changes to " . $this->convertPermission ($result['scope'], $descriptions = true, $addLinks = false, $lowercaseStart = true) . ".\n\nThis means that when you are in that area of the website while using the editor system, you will see an additional button marked 'edit this page' when editing is allowed.". $timeLimitationMessage . ($result['message'] ? "\n\n{$result['message']}" : ''));
+		$this->sendMail ($result['username'], "You have been granted permission to make changes to " . $this->convertPermission ($result['scope'], $descriptions = true, $addLinks = false, $lowercaseStart = true) . ".\n\nThis means that when you are in that area of the website while using the editor system, you will see an additional button marked 'edit this page' when editing is allowed.". $timeLimitationMessage . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'new area you can edit');
 		return true;
 	}
 	
 	
 	# Function to check the start and end date
-	function checkStartEndDate ($startDate, $endDate)
+	function checkStartEndDate (&$form)
 	{
-		# Perform checks on the dates if either are given
-		if ($startDate || $endDate) {
-			
-			# Ensure that if either of a start/end date have been given, that both are given
-			if (!$startDate || !$endDate) {
-				echo "\n<p class=\"failure\">You have specified one of the start/end date but not the other. Please go back and correct this.</p>";
-				return false;
-			}
-			
-			# Check that the start date comes before the end date; NB the >= seems to work successfully with comparison of strings including the dash (-) character
-			if ($startDate >= $endDate) {
-				echo "\n<p class=\"failure\">The end date must be after the start date. Please go back and correct this.</p>";
-				return false;
-			}
-			
-			# Check that the start (and thereby the end date) are after the current date
-			if ($startDate < date ('Y-m-d')) {
-				echo "\n<p class=\"failure\">The start/end dates cannot be retrospective. Please go back and correct this.</p>";
-				return false;
+		# Ensure both are completed if one is
+		$form->validation ('all', array ('Startdate', 'Enddate'));
+		
+		# Take the unfinalised data to deal with start/end date comparisons
+		if ($unfinalisedData = $form->getUnfinalisedData ()) {
+			if ($unfinalisedData['Startdate'] && $unfinalisedData['Enddate']) {
+				
+				# Assemble the start & end dates as a number (this would normally be done in ultimateForm in the post-unfinalised data processing section
+				$startDate = $unfinalisedData['Startdate']['year'] . $unfinalisedData['Startdate']['month'] . ($unfinalisedData['Startdate']['day'] ? sprintf ('%02s', $unfinalisedData['Startdate']['day']) : '');
+				$endDate = $unfinalisedData['Enddate']['year'] . $unfinalisedData['Enddate']['month'] . ($unfinalisedData['Enddate']['day'] ? sprintf ('%02s', $unfinalisedData['Enddate']['day']) : '');
+				
+				# End if no start date or end date
+				if (!$endDate || !$startDate) {return;}
+				
+				# Check that the start (and thereby the end date) are after the current date
+				if ($startDate < date ('Ymd')) {
+					$form->registerProblem ('datefuture', 'The start/end dates cannot be retrospective. Please go back and correct this.');
+				} else {
+					
+					# Check that the start date comes before the end date; NB the >= seems to work successfully with comparison of strings including the dash (-) character
+					if ($startDate >= $endDate) {
+						$form->registerProblem ('datemismatch', 'The end date must be after the start date. Please go back and correct this.');
+					}
+				}
 			}
 		}
 		
-		# Otherwise return true
-		return true;
+		# No return value as the form is passed as a handle
+		return;
 	}
 	
 	
@@ -2321,54 +2317,49 @@ class pureContentEditor
 			'submitTo' => "{$this->page}?" . __FUNCTION__ . "=$permission",
 		));
 		
-		# Make the permission non-editable (NB the spaces are a layout cheat)
-		list ($username, $scope) = explode (':', $permission);
-		$form->heading ('', "Permission for: &nbsp;&nbsp;&nbsp;&nbsp;<strong>{$username}</strong> to change <strong>{$scope}</strong>");
-		$form->hidden (array ( 
-		    'values'            => array ( 'Permission' => $permission, ), 
-		    'title'                    => "Existing permission:", 
+		# Extract the username and scope from the permission
+		list ($username, $scope) = explode (':', $permission, 2);
+		
+		# Form widgets
+		$form->select (array (
+		    'name'		=> 'Permission',
+			'values'	=> array ($permission => "User <em>{$username}</em> can edit <em>{$scope}</em>"),
+		    'title'		=> "Existing permission",
+			'default'	=> $permission,
+			'required'	=> true,
+			'editable'	=> false,
 		));
 /*
-		$selfapprovalText = 'User can make pages live immediately';
+		$selfapprovalText = 'User can make pages live directly';
 		$form->checkboxes (array (
-		    'name'            => 'Self-approval', 
-		    'values'            => array ($selfapprovalText, ), 
-		    'title'                    => 'Allow user to make pages live immediately',
+		    'name'            => 'Self-approval',
+		    'values'            => array ($selfapprovalText, ),
+		    'title'                    => 'Allow user to make pages live directly',
 			'default'            => ($this->permissions[$permission]['Self-approval'] ? $selfapprovalText : ''),
 		));
 */
 		if (!$this->disableDateLimitation) {
-			$form->datetime (array ( 
-			    'name'            => 'Startdate', 
-			    'title'                    => 'Optional availability start date', 
+			$form->datetime (array (
+			    'name'            => 'Startdate',
+			    'title'                    => 'Optional availability start date',
 			    'level'                    => 'date',
-				'default'            => $this->permissions[$permission]['Startdate'], 
-			)); 
-			$form->datetime (array ( 
-			    'name'            => 'Enddate', 
-			    'title'                    => 'Optional availability end date', 
-			    'level'                    => 'date',
-				'default'            => $this->permissions[$permission]['Enddate'], 
+				'default'            => $this->permissions[$permission]['Startdate'],
 			));
+			$form->datetime (array (
+			    'name'            => 'Enddate',
+			    'title'                    => 'Optional availability end date',
+			    'level'                    => 'date',
+				'default'            => $this->permissions[$permission]['Enddate'],
+			));
+			$this->checkStartEndDate ($form);
 		}
 		$form->textarea ($this->additionalMessageWidget);
 		
 		# Show the form and get any results or end here
-		if (!$result = $form->processForm ()) {return;}
-		
-		# Ensure the username matches the posted one
-		if ($result['hidden']['Permission'] != $permission) {
-			echo "\n<p class=\"failure\">The selected permission does not match the one posted in the form.</p>";
-			return false;
-		}
-		
-		# Check the start and end dates
-		if (!$this->checkStartEndDate ($result['Startdate'], $result['Enddate'])) {
-			return false;
-		}
+		if (!$result = $form->process ()) {return;}
 		
 		# Arrange the array into a keyed result
-		list ($result['Username'], $result['Location']) = explode (':', $result['hidden']['Permission']);
+		list ($result['Username'], $result['Location']) = explode (':', $result['Permission']);
 		$amendedPermission[$permission] = array (
 			'Key' => $permission,
 			'Username' => $result['Username'],
@@ -2386,8 +2377,9 @@ class pureContentEditor
 		
 		# Flag changes of administrative status, reloading the database at this point
 		$this->permissions[$permission]['Key'] = $permission;
+		$this->permissions[$permission]['Self-approval'] = 0;
 		if (($this->permissions[$permission] == $amendedPermission[$permission])) {
-			echo "\n<p class=\"information\">No changes have been made to the permission for {$result['Username']} to change {$result['Location']}.</p>";
+			echo "\n<p class=\"information\">No changes have been made to the permission for the user <em>{$result['Username']}</em> to edit <em>{$result['Location']}</em>, so no action was taken.</p>";
 		} else {
 			
 			# Determine what has changed
@@ -2405,10 +2397,10 @@ class pureContentEditor
 			# Construct the e-mail message and send it
 			$message =
 				"Your permission to change {$result['Location']} has been amended and is now as follows:"
-				. ($this->disableDateLimitation ? '' : ($dateHasChanged ? "\n\n- " . (!$dateNowEmpty ? "You can make changes between: " . $this->convertTimestamp ($result['Startdate'], $includeTime = false) . ' and ' . $this->convertTimestamp ($result['Enddate'], $includeTime = false) . '.' : 'You no longer have limitations on when you can make changes.') : ''))
-				. ($selfApprovalHasChanged ? "\n\n- " . ($amendedPermission[$permission]['Self-approval'] ? 'You can now choose to make pages live immediately.' : 'You no longer have the option of making pages live immediately - pages require administrator approval.') : '')
+				. ($this->disableDateLimitation ? '' : ($dateHasChanged ? "\n\n- " . (!$dateNowEmpty ? "You can now make changes from: " . $this->convertTimestamp ($result['Startdate'], $includeTime = false) . ' until ' . $this->convertTimestamp ($result['Enddate'], $includeTime = false) . '.' : 'You no longer have limitations on when you can make changes.') : ''))
+				. ($selfApprovalHasChanged ? "\n\n- " . ($amendedPermission[$permission]['Self-approval'] ? 'You can now choose to make pages live directly.' : 'The option you had of making pages live directly has been ended - pages require administrator approval.') : '')
 				. ($result['message'] ? "\n\n{$result['message']}" : '');
-			$this->sendMail ($username, $message);
+			$this->sendMail ($username, $message, $subjectSuffix = 'change to permission');
 		}
 	}
 	
@@ -2622,45 +2614,46 @@ class pureContentEditor
 		));
 		
 		# Widgets
-		$form->select (array ( 
-		    'name'            => 'key', 
-		    'values'            => $permissions, 
-		    'title'                    => 'Permission to delete', 
+		$form->select (array (
+		    'name'            => 'key',
+		    'values'            => $permissions,
+		    'title'                    => 'Permission to delete',
 			'description'	=> 'Permissions are listed in the form of <em>username (actual name): area</em>',
 		    'required'        => 1,
 			'multiple' => false,
 		));
 		$form->input (array (
-		    'name'            => 'confirmation', 
+		    'name'            => 'username',
 		    'title'                    => 'Confirm username',
 			'description'	=> 'Please type in the username (as shown in the selection above) for confirmation, to prevent accidental deletions',
-		    'required'                => true, 
+		    'required'                => true,
 		));
 		$form->textarea ($this->additionalMessageWidget);
 		
-		# Show the form and get any results or end here
-		if (!$result = $form->processForm ()) {return;}
-		
-		# Split out the username and scope
-		list ($username, $scope) = explode (':', $result['key'], 2);
-		
-		# Check the username matches
-		if ($username != $result['confirmation']) {
-			echo "\n<p class=\"failure\">The usernames you entered did not match. Please <a href=\"{$this->page}?" . __FUNCTION__ . '">go back</a> and try again.</p>';
-			return false;
+		# Check the username matches; note that a >validation can't be used as the 'key' field is in a special format that requires the username to be extracted first
+		if ($unfinalisedData = $form->getUnfinalisedData ()) {
+			if ($unfinalisedData['key'] && isSet ($unfinalisedData['key'][0])) {
+				list ($username, $scope) = explode (':', $unfinalisedData['key'][0], 2);
+				if (($unfinalisedData['username']) && ($username != $unfinalisedData['username'])) {
+					$form->registerProblem ('mismatch', 'The usernames you entered did not match.');
+				}
+			}
 		}
+		
+		# Show the form and get any results or end here
+		if (!$result = $form->process ()) {return;}
 		
 		# Delete the entry
 		if (!csv::deleteData ($this->permissionsDatabase, $result['key'], $this->databaseTimestampingMode)) {return false;}
 		
 		# Signal success
-		echo "\n<p class=\"success\">The permission {$scope} for the user " . $this->convertUsername ($username) . ' was successfully deleted.</p>';
+		echo "\n<p class=\"success\">The permission {$scope} for the user " . $this->convertUsername ($result['username']) . ' was successfully deleted.</p>';
 		
 		# Log the change
-		$this->logChange ("Revoked user {$username}'s permission to edit {$scope}");
+		$this->logChange ("Revoked user {$result['username']}'s permission to edit {$scope}");
 		
 		# Send an e-mail (but don't reload the database!)
-		$this->sendMail ($username, "You no longer have permission to make changes to " . $this->convertPermission ($scope, $descriptions = true, $addLinks = false, $lowercaseStart = true) . ' .' . ($result['message'] ? "\n\n{$result['message']}" : ''));
+		$this->sendMail ($result['username'], "Your permission to make changes to " . $this->convertPermission ($scope, $descriptions = true, $addLinks = false, $lowercaseStart = true) . ' has now been ended. Thank you for your help with this section.' . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'removal of editing rights for an area');
 		return true;
 	}
 	
@@ -2695,9 +2688,9 @@ class pureContentEditor
 		
 		# Define the actions
 		$actions = array (
-			'approve-message'	=> 'Approve it (move to live site) and inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username']) . ' †',
+			'approve-message'	=> 'Approve it (move to live site) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself by way of reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' †',
 			'approve'			=> 'Approve it (move to live site) but send no message',
-			'reject-message'	=> 'Reject it (and delete the file) and inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username']) . ' †',
+			'reject-message'	=> 'Reject it (and delete the file) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself by way of reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' †',
 			'reject'			=> 'Reject it (and delete the file) but send no message',
 			'edit'				=> "Edit it further now (without sending a message)",
 			'message'			=> 'Only send a message to its creator (add a message below) †',
@@ -2712,11 +2705,18 @@ class pureContentEditor
 		$textareaWidget['title'] .= ' († only)';
 		$form->textarea ($textareaWidget);
 		
+		# Ensure a message is entered if messaging
+		if ($unfinalisedData = $form->getUnfinalisedData ()) {
+			if (($unfinalisedData['action'] == 'message') && empty ($unfinalisedData['message'])) {
+				$form->registerProblem ('nomessage', "You didn't enter a message!");
+			}
+		}
+		
 		# Get the file contents
 		$fileOnServer = $this->filestoreRoot . $filename;
 		
 		# If the form is not processed, show the page
-		if (!$result = $form->processForm ()) {
+		if (!$result = $form->process ()) {
 			chdir (str_replace ('\\', '/', dirname ($fileOnServer)));
 			echo "\n<hr />";
 			echo $this->showMaterial ($this->editableFileContents, 'information');
@@ -2742,7 +2742,6 @@ class pureContentEditor
 				
 			case 'reject-message':
 			case 'reject':
-				
 				# Delete the file
 				if (!@unlink ($fileOnServer)) {
 					$this->reportErrors ('There was a problem deleting the rejected file.', "The filename was {$fileOnServer} .");
@@ -2753,8 +2752,8 @@ class pureContentEditor
 				$this->submissions = $this->submissions ($excludeTemplateFiles = true);
 				
 				# Confirm success and relist the submissions if appropriate
-				echo "\n<p class=\"success\">The file $fileLocation was deleted successfully.";
-				echo "\n" . '<p><a href="/?review"><strong>Please click here to continue</strong></a>' . ($this->submissions ? ', or continue moderating pages.' : '.') . '</p>';
+				echo "\n<p class=\"success\">The file {$fileLocation} was deleted successfully.";
+				echo "\n" . '<p><a href="/?review"><strong>Revert to browsing</strong></a>' . ($this->submissions ? ', or continue moderating pages.' : '.') . '</p>';
 				#!# Reloading is failing here sometimes
 				if ($this->submissions) {echo $this->listSubmissions ($reload = false);}
 				echo "\n<hr />";
@@ -2764,9 +2763,9 @@ class pureContentEditor
 				
 				# Mail the user if required
 				if ($mailUser) {
-					$compiledMessage = "The file you submitted, $fileLocation" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on {$fileTimestamp}, has been rejected and thus deleted.";
+					$compiledMessage = "The page you submitted, $fileLocation" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on {$fileTimestamp}, has been rejected and thus deleted.";
 					if ($result['message']) {$compiledMessage .= "\n\n{$result['message']}";}
-					$this->sendMail ($file['username'], $compiledMessage);
+					$this->sendMail ($file['username'], $compiledMessage, $subjectSuffix = 'page submission rejected');
 				}
 				
 				break;
@@ -2779,15 +2778,9 @@ class pureContentEditor
 				break;
 				
 			case 'message':
-				# Ensure a message has been given
-				if (!$result['message']) {
-					echo "<p class=\"failure\">You didn't enter a message! Please <a href=\"{$this->page}?" . __FUNCTION__ . "={$filename}\">go back</a> and try again.</p>";
-					return;
-				}
-				
 				# Send the message
-				$compiledMessage = "With regard to the file you submitted, $fileLocation" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on $fileTimestamp:\n\n{$result['message']}";
-				$this->sendMail ($this->submissions[$filename]['username'], $compiledMessage);
+				$compiledMessage = "With regard to the page you submitted, {$fileLocation}" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on {$fileTimestamp}:\n\n{$result['message']}";
+				$this->sendMail ($this->submissions[$filename]['username'], $compiledMessage, 'message regarding a page you submitted');
 				break;
 		}
 	}
@@ -2833,9 +2826,9 @@ class pureContentEditor
 		# Mail the user if required
 		if ($mailUser) {
 			$fileTimestamp = $this->convertTimestamp ($this->submissions[$submittedFile]['timestamp']);
-			$compiledMessage = "The file you submitted, {$newFileLiveLocation}" . ($this->submissions[$submittedFile]['title'] ? " ({$this->submissions[$submittedFile]['title']})" : ' ') . ", on {$fileTimestamp}, has been approved and is now online, at:\n\n{$this->liveSiteUrl}{$newFileLiveLocationChopped}";
+			$compiledMessage = "The page you submitted, {$newFileLiveLocation}" . ($this->submissions[$submittedFile]['title'] ? " ({$this->submissions[$submittedFile]['title']})" : ' ') . ", on {$fileTimestamp}, has been approved and is now online, at:\n\n{$this->liveSiteUrl}{$newFileLiveLocationChopped}";
 			if ($extraMessage) {$compiledMessage .= "\n\n{$extraMessage}";}
-			$this->sendMail ($this->submissions[$submittedFile]['username'], $compiledMessage);
+			$this->sendMail ($this->submissions[$submittedFile]['username'], $compiledMessage, 'page approved');
 		}
 		
 		# Delete the staging file and log the change
@@ -2875,14 +2868,14 @@ class pureContentEditor
 		if ($privateInfo) {$message .= "\n\nAdditional diagnostic information:\n" . $privateInfo;}
 		
 		# Send the mail
-		if ($this->sendMail ($this->serverAdministrator, $message, $showMessage = false)) {
+		if ($this->sendMail ($this->serverAdministrator, $message, $subjectSuffix = (count ($errors) == 1 ? 'error' : 'errors') . ' occured - please investigate', $showMessageOnScreen = false)) {
 			echo '<p class="information">The server administrator has been informed about ' . (count ($errors) == 1 ? 'this error' : 'these errors') . '.</p>';
 		}
 	}
 	
 	
 	# Wrapper function to send e-mail
-	function sendMail ($users, $message, $showMessage = true)
+	function sendMail ($users, $message, $subjectSuffix = false, $showMessageOnScreen = true)
 	{
 		# If the user is actually an e-mail address, assign this directly; otherwise obtain attributes
 		if ($users == $this->serverAdministrator) {
@@ -2921,14 +2914,14 @@ class pureContentEditor
 		$recipientList = implode (', ', $to);
 		
 		# Send the mail; ensure the editSiteUrl is set (it may not be if this function is being thrown by reportErrors ()
-		$subject = 'Website editing facility' . ($this->editSiteUrl ? ' on ' . $this->editSiteUrl . '/' : '');
+		$subject = ($this->websiteName ? $this->websiteName : $this->liveSiteUrl) . ' website editing facility' . ($subjectSuffix ? ': ' . $subjectSuffix : '');
 		if (!mail ($recipientList, $subject, wordwrap ($message), $from)) {
 			echo "\n<p class=\"failure\">There was a problem sending an e-mail to the user.</p>";
 			return false;
 		}
 		
 		# Print the message if necessary
-		if ($showMessage) {
+		if ($showMessageOnScreen) {
 			echo "\n<p class=\"success\">The following message has been sent:</p>";
 			echo "\n<blockquote><pre>";
 			echo "\n" . htmlentities ($from);
@@ -2983,6 +2976,7 @@ class pureContentEditor
 	function listSubmissions ($reload = false)
 	{
 		# Reload the list, excluding template files
+		#!# Set excludeTemplateFiles to false when they are created only in memory while editing
 		if ($reload) {$this->submissions = $this->submissions ($excludeTemplateFiles = true);}
 		
 		# If there are no files awaiting review, say so and finish
@@ -2992,7 +2986,7 @@ class pureContentEditor
 		}
 		
 		# Start a table of data
-		$html  = "\n<p>The following is a list of pages awaiting review:</p>";
+		$html  = "\n<p>The following pages are awaiting review:</p>";
 		$html .= "\n" . '<table class="lines">';
 		$html .= "\n\t" . '<tr>';
 		$html .= "\n\t\t" . '<th>File location</th>';
@@ -3056,12 +3050,21 @@ class pureContentEditor
 	#!# Needs to have page/file/directory type checking and cover these types also
 	function getTitle ($file)
 	{
-		# Load the page and scan for the title
-		#!# Inefficient - needs to grab just the first 100 bytes or so
-		#!# Add more options to getTitleFromFileContents
-		#!# Does this is need file handling?
-		$contents = file_get_contents ($this->filestoreRoot . $file);
-		$title = application::getTitleFromFileContents ($contents);
+		# Determine if this is a title file
+		$isTitleFile = (ereg ('^' . $this->pureContentTitleFile, basename ($file)));
+		
+		# Load the contents of a title file
+		if ($isTitleFile) {
+			$title = file_get_contents ($this->filestoreRoot . $file);
+		} else {
+			
+			# Load the page and scan for the title
+			#!# Inefficient - needs to grab just the first 100 bytes or so
+			#!# Add more options to getTitleFromFileContents
+			#!# Does this is need file handling?
+			$contents = file_get_contents ($this->filestoreRoot . $file);
+			$title = application::getTitleFromFileContents ($contents);
+		}
 		
 		# Return the title
 		return $title;
@@ -3165,10 +3168,10 @@ class pureContentEditor
 		));
 		
 		# Set the processing options
-		if (!$result = $form->processForm ()) {return false;}
+		if (!$result = $form->process ()) {return false;}
 		
 		# Send the message
-		$this->sendMail ($result['username'], $result['message']);
+		$this->sendMail ($result['username'], $result['message'], $subjectSuffix = 'message');
 	}
 }
 
@@ -3211,7 +3214,7 @@ class pureContentEditor
 # BUG: _fckeditor being appended to images/links in some cases
 # Moderation should cc: other administrators (not yourself though) when a page is approved
 # Make /page.html rights the default when on a section page rather than an index page
-# Enable creation of .title.txt files
+# Enable explicit creation of .title.txt files
 # Sort by ... for reviewing
 # Diffing function - apparently wikimedia includes a good PHP class for this - see http://cvs.sourceforge.net/viewcvs.py/wikipedia/phase3/includes/  - difference engine
 # /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
@@ -3221,11 +3224,15 @@ class pureContentEditor
 # Link checker
 # Option to ban top-level _directory_ creation as well as files
 # Force .menu.html links to be absolute
-# Less ugly e-mail title
 # 'Mail all users' function (complete with "are you sure you want to?" confirmation)
 # [New] symbol to mark when a page is new rather than updated
 # Lookup-enabling interface for auto permissions
 # Have a single 'master' port so that links are correct when running off two ports at once (or sort out /login ...)
 # Messaging facility should state which page the message is being sent on
+# Change all file writes so that writability check is done in setup, removing the need for error reporting
+# † sometimes not being escaped properly
+# /sitetech/ area editing GUI (for admins)
+# Start/end date should be in user not permission side
+# Consider making administrator rights set as a select box rather than a difficultly-titled checkbox
 
 ?>
