@@ -55,7 +55,8 @@ class pureContentEditor
 		'developmentEnvironment' => false,		// Whether to run in development environment mode
 		'hideDirectoryNames' => array ('.AppleDouble', 'Network Trash Folder', 'TheVolumeSettingsFolder'), // Directory names to exclude from directory listings
 		'wordwrapViewedSubmittedHtml' => false,	// Whether to wordwrap submitted HTML in the confirmation display (will not affect the file itself)
-		'bannedLocations' => array ('/sitetech/*', ),			// List of banned locations where pages/folders cannot be created and which will not be listed
+		'bannedLocations' => array (),			// List of banned locations where pages/folders cannot be created and which will not be listed
+		'technicalFileLocations' => array ('/sitetech/*', '/robots.txt',  '/.htaccess', ),	// List of technical file locations, which are administrator-only
 		'allowPageCreationAtRootLevel' => false,	// Whether to allow page creation at root level (e.g. example.com/page.html )
 		'archiveReplacedLiveFiles' => true,		// Whether to backup files on the live site which have been replaced (either true [put in same location], false [no archiving] or a path
 		'protectEmailAddresses' => true,	// Whether to obfuscate e-mail addresses
@@ -71,7 +72,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.0.10';
+	var $version = '1.1.0';
 	
 	
 	# Constructor
@@ -102,7 +103,7 @@ class pureContentEditor
 		if (!$this->setup ($parameters)) {return false;}
 		
 		# Get the current page and attributes from the query string
-		if (!list ($this->page, $this->action, $this->attributes) = $this->parseQueryString ()) {return false;}
+		if (!list ($this->page, $this->action, $this->attribute) = $this->parseQueryString ()) {return false;}
 		
 		# Get the current directory for this page
 		$this->currentDirectory = $this->currentDirectory ();
@@ -155,6 +156,9 @@ class pureContentEditor
 		# Determine whether the page contains PHP
 		$this->pageContainsPhp = $this->pageContainsPhp ();
 		
+		# Add to the list of banned locations the technical file locations, if the user is not an administrator
+		if (!$this->userIsAdministrator && $this->technicalFileLocations) {$this->bannedLocations = array_merge ($this->bannedLocations, $this->technicalFileLocations);}
+		
 		# Determine whether there is an administrator ban here
 		$this->changesBannedHere = $this->changesBannedHere ();
 		
@@ -164,26 +168,26 @@ class pureContentEditor
 		# Determine whether the user can edit the current page
 		$this->userCanEditCurrentPage = $this->userCanEditCurrentPage ();
 		
-		# Get the available tasks
-		$this->tasks = $this->tasks ();
+		# Get the available actions
+		$this->actions = $this->actions ();
 		
 		# Show the menu
 		echo $this->showMenu ();
 		
 		# Check that the action is allowed; 'live' is a special case as it's not a real function as such, as is logout
-		if (!array_key_exists ($this->action, $this->tasks) || $this->action == 'live' || ($this->action == 'logout' && $this->logout)) {
+		if (!array_key_exists ($this->action, $this->actions) || $this->action == 'live' || ($this->action == 'logout' && $this->logout)) {
 			echo "\n" . '<p class="failure">You appear to have requested a non-existent/unavailable function which is not available. Please use one of the links in the menu to continue.</p>';
 			return false;
 		}
 		
 		# If the function is administrative but the user is not an administrator, end
-		if ($this->tasks[$this->action]['administratorsOnly'] && !$this->userIsAdministrator) {
+		if ($this->actions[$this->action]['administratorsOnly'] && !$this->userIsAdministrator) {
 			echo "\n" . '<p class="failure">You are not an administrator, so cannot perform the requested operation.</p>';
 			return false;
 		}
 		
 		# Take action
-		$this->{$this->action} ($this->attributes);
+		$this->{$this->action} ($this->attribute);
 	}
 	
 	
@@ -233,8 +237,11 @@ class pureContentEditor
 		# Ensure the current page is not the instantiating stub file
 		$this->stubFileLocation = ereg_replace ('^' . $this->liveSiteRoot, '', $_SERVER['SCRIPT_FILENAME']);
 		
-		# Confirm a list of banned locations (which also affects the administrator), including the stub file
+		# Ensure the bannedLocations and technical file locations are arrays
 		$this->bannedLocations = application::ensureArray ($this->bannedLocations);
+		if ($this->technicalFileLocations) {$this->technicalFileLocations = application::ensureArray ($this->technicalFileLocations);}
+		
+		# Confirm a list of banned locations (which also affects the administrator), including the stub file
 		$this->bannedLocations[] = $this->stubFileLocation;
 		
 		# Ensure the filestore exists and is writable before continuing, if the location has been supplied
@@ -329,10 +336,10 @@ class pureContentEditor
 	{
 		# A particular page can be specified if the action is editing/browsing/reviewing and the page is specified as an attribute and exists
 		if ($this->action != 'edit' && $this->action != 'browse' && $this->action != 'review') {return false;}
-		if (!isSet ($this->submissions[$this->attributes])) {return false;}
+		if (!isSet ($this->submissions[$this->attribute])) {return false;}
 		
 		# Construct the filename
-		return $particularPageFile = $this->attributes;
+		return $particularPageFile = $this->attribute;
 	}
 	
 	
@@ -444,7 +451,7 @@ class pureContentEditor
 		if (!$this->stagingPage) {return 'live';}
 		
 		# If, now that a staging page is confirmed present, the original is being requested, return false
-		if ((($this->action == 'edit') || ($this->action == 'browse')) && ($this->attributes != 'original')) {return 'staging';}
+		if ((($this->action == 'edit') || ($this->action == 'browse')) && ($this->attribute != 'original')) {return 'staging';}
 		
 		# Otherwise return false
 		return 'live';
@@ -518,39 +525,66 @@ class pureContentEditor
 	}
 	
 	
-	# Function to parse the query string and return the page and attributes
+	# Function to parse the query string and return the page and attributes; this is basically the guts of dealing with all the hacked mod-rewrite rerouting stuff
 	function parseQueryString ()
 	{
-		# Get the query
-		$query = explode ('&', $_SERVER['QUERY_STRING']);
-		
-		# Assign the page
-		$page = (!isSet ($_SERVER['REDIRECT_SCRIPT_URL']) ? $query[0] : $_SERVER['REDIRECT_SCRIPT_URL']);
-		
-		# If the user has requested a directory, ensure it internally ends with the directory index
-		if (substr ($page, -1) == '/') {$page .= $this->directoryIndex;}
-		
-		# Disallow loading of the instantiating stub file
-		if ($page == $this->stubFileLocation) {return false;}
-		
-		# Obtain the current action and set the initial attributes
-		$action = 'browse';
-		$attributes = false;
-		if (isSet ($query[1])) {
-			$split = explode ('=', $query[1]);
-			$action = $split[0];
-			$attributes = (isSet ($split[1]) ? $split[1] : '');
+		# Check for location-independent URL handling
+		if (ereg ('^(([^\?]+)\.[0-9]{8}-[0-9]{6}\.[^\?]+)(\?([a-zA-Z]+))?$', $_SERVER['REQUEST_URI'], $matches)) {
 			
-/*	breadcrumb editing work - TODO
-			# If the breadcrumb type is requested, substitute the directory index component with the breadcrumb component
-			if ($action == 'breadcrumb') {
-				$page = ereg_replace (basename ($page) . '$', $this->pureContentTitleFile, $page);
+			# Location-independent URL handling; this is where /foo/bar.html.YYYYMMDD-hhmmss.username?action is used to derive the page itself as /foo/bar.html rather than /foo/bar.html?action=/foo/bar.html.YYYYMMDD-hhmmss.username?action
+			
+			/* E.g. for 
+			/foo/bar.html.20070822-155250.username?review
+			the above regexp sets $matches as:
+			Array
+			(
+			    [0] => /foo/bar.html.20070822-155250.username?review		// Full match
+			    [1] => /foo/bar.html.20070822-155250.username				// Attribute, i.e. specific version of page
+			    [2] => /foo/bar.html										// Page itself
+			    [3] => ?review												// Unwanted; capture required because ()? needed for optional action in regexp
+			    [4] => review												// Action
+			)
+			*/
+			
+			# Assign the matches
+			$page = $matches[2];
+			$action = ($matches[4] ? $matches[4] : 'browse');
+			$attribute = $matches[1];
+			
+		# Otherwise use the standard, previous default behaviour
+		} else {
+			
+			# Get the query
+			$query = explode ('&', $_SERVER['QUERY_STRING']);
+			
+			# Assign the page
+			$page = (!isSet ($_SERVER['REDIRECT_SCRIPT_URL']) ? $query[0] : $_SERVER['REDIRECT_SCRIPT_URL']);
+			
+			# If the user has requested a directory, ensure it internally ends with the directory index
+			if (substr ($page, -1) == '/') {$page .= $this->directoryIndex;}
+			
+			// # Disallow loading of the instantiating stub file
+			// if ($page == $this->stubFileLocation) {return false;}
+			
+			# Obtain the current action and set the initial attribute
+			$action = 'browse';
+			$attribute = false;
+			if (isSet ($query[1])) {
+				$split = explode ('=', $query[1]);
+				$action = $split[0];
+				$attribute = (isSet ($split[1]) ? $split[1] : '');
+				
+	/*	breadcrumb editing work - TODO
+				# If the breadcrumb type is requested, substitute the directory index component with the breadcrumb component
+				if ($action == 'breadcrumb') {
+					$page = ereg_replace (basename ($page) . '$', $this->pureContentTitleFile, $page);
+				}
+	*/
 			}
-*/
 		}
 		
-		# Return the query and attributes
-		return array ($page, $action, $attributes);
+		# Return the query and attribute
+		return array ($page, $action, $attribute);
 	}
 	
 	
@@ -751,30 +785,43 @@ class pureContentEditor
 		# Menu file, starts with the string contained in $this->pureContentMenuFile
 		if (ereg ('^' . $this->pureContentMenuFile, $filename)) {return 'menuFile';}
 		
+		# Text files
+		if (ereg ('\.txt((\.[0-9]{8}-[0-9]{6}\..+)?)$', $filename)) {return 'txtFile';}
+		
+		# CSS files
+		if (ereg ('\.css((\.[0-9]{8}-[0-9]{6}\..+)?)$', $filename)) {return 'cssFile';}
+		
+		# Javascript files
+		if (ereg ('\.js((\.[0-9]{8}-[0-9]{6}\..+)?)$', $filename)) {return 'jsFile';}
+		
 		# Default to a page
 		return 'page';
 	}
 	
 	
-	# Function to get menu tasks and their permissions
-	function tasks ()
+	# Function to get menu actions and their permissions
+	function actions ()
 	{
-		# Create an array of the tasks
-		$tasks = array (
+		# Create an array of the actions
+		$actions = array (
 			'browse' => array (
 				'title' => 'Browse site',
 				'tooltip' => 'Browse the site as normal and find pages to edit',
-				'url' => $this->page,
+				#!# Find a way to get this removed
+				'url' => $this->page,	// Necessary to ensure index.html is at the end of the page
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
 			),
 			
 			'edit' => array (
 				'title' => 'Edit this page',
+				#!# Find a way to get this removed
+				'url' => $this->page . '?edit',	// Necessary to ensure index.html is at the end of the page
 				'tooltip' => 'Edit the current page',
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
 				'check' => 'userCanEditCurrentPage',
+				// 'locationInsensitive' => true, // Not defineable here
 			),
 			
 			'live' => array (
@@ -837,6 +884,13 @@ class pureContentEditor
 				'grouping' => 'Additional',
 			),
 			
+			'houseStyle' => array (
+				'title' => 'House style',
+				'tooltip' => 'Edit the house style pages',
+				'administratorsOnly' => true,
+				'grouping' => 'Additional',
+			),
+			
 			'message' => array (
 				'title' => 'Send message',
 				'tooltip' => 'Send a message to the administrator and/or other users of the editing system',
@@ -846,7 +900,7 @@ class pureContentEditor
 			
 			'help' => array (
 				'title' => 'Tips/help',
-				'tooltip' => '',
+				'tooltip' => 'Tip sheet and other help tips, as well as information about this system',
 				'administratorsOnly' => false,
 				'grouping' => 'Additional',
 			),
@@ -925,12 +979,12 @@ class pureContentEditor
 			),
 		);
 		
-		# Loop through each task to perform checks for validity
-		foreach ($tasks as $task => $attributes) {
+		# Loop through each action to perform checks for validity
+		foreach ($actions as $action => $attributes) {
 			
-			# Disable access to a task for those marked administratorsOnly if the user is not an administrator
+			# Disable access to an action for those marked administratorsOnly if the user is not an administrator
 			if ($attributes['administratorsOnly'] && !$this->userIsAdministrator) {
-				unset ($tasks[$task]);
+				unset ($actions[$action]);
 			}
 			
 			# If there is a special property check required (which is reversed if appended with '!'), check for that
@@ -938,18 +992,18 @@ class pureContentEditor
 				if (substr ($attributes['check'], 0, 1) == '!') {
 					$functionToCheck = substr ($attributes['check'], 1);
 					if ($this->$functionToCheck) {
-						unset ($tasks[$task]);
+						unset ($actions[$action]);
 					}
 				} else {
 					if (!$this->$attributes['check']) {
-						unset ($tasks[$task]);
+						unset ($actions[$action]);
 					}
 				}
 			}
 		}
 		
-		# Return the tasks
-		return $tasks;
+		# Return the actions
+		return $actions;
 	}
 	
 	
@@ -984,21 +1038,21 @@ class pureContentEditor
 	# Function to add an administrative menu
 	function showMenu ()
 	{
-		# Group the tasks
-		foreach ($this->tasks as $task => $attributes) {
+		# Group the actions
+		foreach ($this->actions as $action => $attributes) {
 			$grouping = $attributes['grouping'];
-			$menu[$grouping][] = $task;
+			$menu[$grouping][] = $action;
 		}
 		
 		# Compile the task box HTML
 		$html  = "\n\n<div id=\"administration\">";
 		$html .= "\n\t<p><em>pureContentEditor</em> actions available here for <strong>{$this->user}</strong>:</p>";
 		$html .= "\n\t<ul>";
-		foreach ($menu as $group => $tasks) {
+		foreach ($menu as $group => $actions) {
 			$html .= "\n\t\t<li>{$group}:";
 			$html .= "\n\t\t\t<ul>";
-			foreach ($tasks as $task) {
-				$html .= "\n\t\t\t\t<li" . (($task == $this->action) ? ' class="selected"' : '') . '><a href="' . (isSet ($this->tasks[$task]['url']) ? $this->tasks[$task]['url'] : "?$task") . '"' . ($this->tasks[$task]['administratorsOnly'] ? ' class="administrative"' : '') . " title=\"{$this->tasks[$task]['tooltip']}\">{$this->tasks[$task]['title']}</a></li>";
+			foreach ($actions as $action) {
+				$html .= "\n\t\t\t\t<li" . (($action == $this->action) ? ' class="selected"' : '') . '><a href="' . (isSet ($this->actions[$action]['url']) ? $this->actions[$action]['url'] : $this->chopDirectoryIndex ($this->page) . "?{$action}") . '"' . ($this->actions[$action]['administratorsOnly'] ? ' class="administrative"' : '') . " title=\"{$this->actions[$action]['tooltip']}\">{$this->actions[$action]['title']}</a></li>";
 			}
 			$html .= "\n\t\t\t</ul></li>";
 		}
@@ -1018,7 +1072,7 @@ class pureContentEditor
 		$addWarning = false;
 		switch ($this->pageToUse) {
 			case 'staging':
-				$versionMessage  = 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " an unapproved edition of this page (<span title=\"(saved at " . $this->convertTimestamp ($this->submissions[$this->stagingPage]['timestamp']) . " by " . $this->convertUsername ($this->submissions[$this->stagingPage]['username']) . ')">hover here for details</span>), the latest version available.';
+				$versionMessage  = 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " from an unapproved edition of this page (<span title=\"(saved at " . $this->convertTimestamp ($this->submissions[$this->stagingPage]['timestamp']) . " by " . $this->convertUsername ($this->submissions[$this->stagingPage]['username']) . ')">hover here for details</span>), the latest version available.';
 				if ($this->livePage) {$versionMessage .= "<br />You can <a href=\"{$this->page}?{$action}=original\">{$action} from the live version</a> instead.";}
 				break;
 			case 'live':
@@ -1132,7 +1186,6 @@ class pureContentEditor
 	}
 */
 	
-	
 	# Function to edit the page
 	function edit ()
 	{
@@ -1161,6 +1214,15 @@ class pureContentEditor
 		
 		# Give a message for what file is being edited, and if necessary a PHP care warning
 		$heading = ($pageIsNew ? '' : $this->versionMessage (__FUNCTION__)) . ($this->pageContainsPhp ? "</p>\n<p class=\"information\">Take care when editing this page as it contains special PHP code." : '');
+		
+		# If the file is a technical file, then replace the heading with a strong warning
+		$textMode = false;
+		if ($this->matchLocation ($this->technicalFileLocations, $this->page)) {
+			$textMode = true;
+			$heading  = "<p class=\"information\"><strong>Take special care when editing this page as changes to this technical file could disrupt the entire site.</strong></p><p>Alternatively, you may wish to <a href=\"/?houseStyle\">return to the list of house style / technical files</a>.</p>";
+		}
+		
+		# Add the heading
 		if ($heading) {$form->heading ('', $heading);}
 		
 		# Give the correct type of editing box
@@ -1182,14 +1244,16 @@ class pureContentEditor
 			default:
 				
 				# If the page contains PHP (and thus the user is an administrator to have got this far in the code), give a text area instead
-				if ($this->pageContainsPhp) {
+				if ($this->pageContainsPhp || $textMode) {
+					
 					$form->textarea (array (
-						'name'			=> 'content',
-						'title'					=> 'Page content',
-						'required'				=> true,
-						'cols'					=> $this->textareaEditorWidth,
-						'rows'					=> $this->textareaEditorHeight,
-						'default'				=> $this->editableFileContents,
+						'name'		=> 'content',
+						'title'		=> 'Page content',
+						'required'	=> true,
+						'cols'		=> $this->textareaEditorWidth,
+						'rows'		=> $this->textareaEditorHeight,
+						'default'	=> $this->editableFileContents,
+						'wrap'		=> 'off',
 					));
 					
 				} else {
@@ -1277,7 +1341,7 @@ class pureContentEditor
 				$this->logChange ("Submitted {$this->page}");
 				
 				# Construct a confirmation message
-				$message = "A page has been submitted for the location:\n{$this->page}\n\nPlease log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}{$this->page}?review=" . ereg_replace ('^' . $this->filestoreRoot, '', $filename);
+				$message = "A page has been submitted for the location:\n{$this->page}\n\nPlease log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}" . ereg_replace ('^' . $this->filestoreRoot, '', $filename) . '?review';
 				$subjectSuffix = 'page submitted for moderation';
 			}
 		}
@@ -1331,7 +1395,7 @@ class pureContentEditor
 		$html .= "\n<hr />";
 		$html .= "\n</div>";
 		$html .= "\n\n\n";
-		$html .= ($this->typeOfFile != 'titleFile' ? $content : "<pre>$content</pre>");
+		$html .= ($this->typeOfFile == 'page' ? $content : "<pre>{$content}</pre>");
 		$html .= "\n\n\n" . '<div id="purecontenteditorresult">';	// Admittedly, using ID here is not strictly valid HTML, but it keeps the stylesheet simpler
 		
 		# Continue the HTML if not a title file
@@ -1809,11 +1873,11 @@ class pureContentEditor
 	function userAmend ()
 	{
 		# Get the username (if supplied)
-		$username = $this->attributes;
+		$username = $this->attribute;
 		
 		# If a user has been selected but does not exist, say so
 		if ($username && !isSet ($this->users[$username])) {
-			echo "\n<p class=\"failure\">There is no user {$this->attributes}.</p>";
+			echo "\n<p class=\"failure\">There is no user {$this->attribute}.</p>";
 		}
 		
 		# Show the list of users with the links if no user has been selected
@@ -2295,11 +2359,11 @@ class pureContentEditor
 	function permissionAmend ()
 	{
 		# Get the username (if supplied)
-		$permission = $this->attributes;
+		$permission = $this->attribute;
 		
 		# If a user has been selected but does not exist, say so
 		if ($permission && !isSet ($this->permissions[$permission])) {
-			echo "\n<p class=\"failure\">There is no permission {$this->attributes}.</p>";
+			echo "\n<p class=\"failure\">There is no permission {$this->attribute}.</p>";
 		}
 		
 		# Show the list of users with the links if no user has been selected
@@ -2688,9 +2752,9 @@ class pureContentEditor
 		
 		# Define the actions
 		$actions = array (
-			'approve-message'	=> 'Approve it (move to live site) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself by way of reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' †',
+			'approve-message'	=> 'Approve it (move to live site) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' †',
 			'approve'			=> 'Approve it (move to live site) but send no message',
-			'reject-message'	=> 'Reject it (and delete the file) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself by way of reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' †',
+			'reject-message'	=> 'Reject it (and delete the file) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' †',
 			'reject'			=> 'Reject it (and delete the file) but send no message',
 			'edit'				=> "Edit it further now (without sending a message)",
 			'message'			=> 'Only send a message to its creator (add a message below) †',
@@ -2772,8 +2836,8 @@ class pureContentEditor
 				
 			case 'edit':
 				# Redirect the user to the new page; take no other action. The previous version will need to be deleted manually by the administrator
-				application::sendHeader (302, "{$this->editSiteUrl}{$fileLocation}?edit={$filename}");
-				echo "\n<p><a href=\"{$fileLocation}?edit={$filename}\">Click here to edit the file</a> (as your browser has not redirected you automatically).</p>";
+				application::sendHeader (302, "{$this->editSiteUrl}{$filename}?edit");
+				echo "\n<p><a href=\"{$filename}?edit\">Click here to edit the file</a> (as your browser has not redirected you automatically).</p>";
 				
 				break;
 				
@@ -3003,7 +3067,7 @@ class pureContentEditor
 			
 			# Create a table row
 			$html .= "\n\t" . '<tr>';
-			$html .= "\n\t\t" . "<td><a" . ($this->reviewPagesOpenNewWindow ? ' target="blank"': '') . " href=\"$location?review=$file\">$location</a></td>";
+			$html .= "\n\t\t" . "<td><a" . ($this->reviewPagesOpenNewWindow ? ' target="blank"': '') . " href=\"{$file}?review\">$location</a></td>";
 			$html .= "\n\t\t" . '<td>' . ($attributes['title'] ? $attributes['title'] : '<span class="comment">[No title]</span>') . '</td>';
 			$html .= "\n\t\t" . '<td>' . (($this->user == $attributes['username']) ? 'Myself' : $this->convertUsername ($attributes['username'])) . '</td>';
 			$html .= "\n\t\t" . '<td>' . $this->convertTimestamp ($attributes['timestamp']) . '</td>';
@@ -3072,7 +3136,7 @@ class pureContentEditor
 	
 	
 	# Function to filter and organise the file listing
-	function submissionsFiltered ($files, $extensions = array ('html', 'txt', ))
+	function submissionsFiltered ($files, $extensions = array ('html', 'txt', 'css', 'js'))
 	{
 		# Loop through each file and build up a list of validated files
 		$validatedFiles = array ();
@@ -3119,6 +3183,53 @@ class pureContentEditor
 		if ($problemsFound = directories::deleteEmptyDirectories ($this->filestoreRoot)) {
 			$this->reportErrors ('Problems were encountered when attempting to delete empty folders in the filestore.', "The list of directories which did not delete is:\n" . implode ("\n", $problemsFound));
 		}
+	}
+	
+	
+	# Function to enable editing of the house style pages
+	function houseStyle ()
+	{
+		# Determine the allowable types
+		$supportedFileTypes = array ('html', 'php', 'js', 'css');
+		
+		# Get the listing
+		$files = directories::flattenedFileListingFromArray ($this->technicalFileLocations, $this->liveSiteRoot, $supportedFileTypes);
+		
+		# End if there are no files
+		if (!$files) {
+			echo "\n<p>There are no technical files available for editing under this system.</p>";
+		}
+		
+		# Allocate names used by pureContent
+		$pureContentNames = array (
+			'/.htaccess' => 'Main .htaccess file for site',
+			'/robots.txt' => 'Instructions for search engines',
+			'/sitetech/403.html' => "'403 access denied' page",
+			'/sitetech/404.html' => "'404 page not found' page",
+			'/sitetech/appended.html' => 'Footer (appended) file',
+			'/sitetech/generic.css' => 'Generic stylesheet',
+			'/sitetech/global.css' => 'Main stylesheet',
+			'/sitetech/library.js' => 'Javascript library',
+			'/sitetech/menu.html' => 'Main menu file',
+			'/sitetech/prepended.html' => 'Header (prepended) file',
+			'/sitetech/purecontenteditor-htaccess/purecontenteditor.html' => 'pureContentEditor bootstrapping file, for an instance using htaccess authentication',
+			'/sitetech/purecontenteditor/purecontenteditor.html' => 'pureContentEditor bootstrapping file, for an instance using default authentication',
+		);
+		
+		# Convert the list to being links
+		$links = array ();
+		foreach ($files as $location => $file) {
+			$links[] = "<a href=\"{$location}?edit\">{$location}</a>" . (isSet ($pureContentNames[$location]) ? " - {$pureContentNames[$location]}" : '');
+		}
+		
+		# Assemble the HTML
+		$html  = "\n<p>This section lets you edit the central, house style / technical files which are central to the running of the site.</p>";
+		$html .= "\n<p class=\"warning\"><strong>Warning: You should only edit these files if you know what you are doing. Mistakes will affect the whole site.</strong></p>";
+		$html .= "\n<p>Note that some files may not be editable depending on the configuration of the webserver.</p>";
+		$html .= application::htmlUl ($links);
+		
+		# Show the HTML
+		echo $html;
 	}
 	
 	
@@ -3176,13 +3287,11 @@ class pureContentEditor
 }
 
 #!# Add more info for all reportError calls so that they location info is always included to enable debugging
-#!# Larger textarea replacement size
 #!# When doing include (), do a check first for the type of file; if a text file, just do a file_get_contents surround with <pre />
 #!# Prevent creation of a permission when a more wide-ranging one exists
 #!# Delete all permissions when promoting to an administrator
 #!# Option not to mail yourself when you approve your own page and you are the only administrator
 #!# Audit the use of relative links
-#!# Enable PDF and Word uploading.
 #!# Enable user to be able to save pages directly without approval
 #!# Remove hard-coded mention of Raven
 #!# Checking writability needs to be done on the proposed file, NOT at top level
@@ -3190,7 +3299,7 @@ class pureContentEditor
 
 ### Potential future development suggestions:
 #R# Consider moving chdir into showMaterial ();
-#R# Fix known but difficult bug in review (): 'reject' where the tasks list links all break because there is no longer a page there
+#R# Fix known but difficult bug in review (): 'reject' where the actions list links all break because there is no longer a page there
 #R# Implement a better algorithm for typeOfFile ()
 #R# Implement the notion of a currently active permission which is definitive and which can be looked up against
 # Groups facility
