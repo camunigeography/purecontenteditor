@@ -72,7 +72,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.1.0';
+	var $version = '1.1.1';
 	
 	
 	# Constructor
@@ -613,6 +613,10 @@ class pureContentEditor
 			$this->userAdd ($firstRun = true);
 			return false;
 		}
+		
+		# Sort the users by username
+		#!# Ideally replace with a function that sorts by Surname,Forename and maintains key association
+		ksort ($users);
 		
 		# Return the users
 		return $users;
@@ -1845,7 +1849,7 @@ class pureContentEditor
 		}
 		
 		# Flatten the checkbox result
-		$result['Administrator'] = ($firstRun ? true : ($result['Administrator']['Make administrator'] ? '1' : '0'));
+		$result['Administrator'] = ($firstRun ? true : ($result['Administrator'][$makeAdministratorText] ? '1' : '0'));
 		
 		# Arrange the array into a keyed result
 		$newUser[$result['Username']] = $result;
@@ -2806,9 +2810,28 @@ class pureContentEditor
 				
 			case 'reject-message':
 			case 'reject':
-				# Delete the file
-				if (!@unlink ($fileOnServer)) {
-					$this->reportErrors ('There was a problem deleting the rejected file.', "The filename was {$fileOnServer} .");
+				
+				# Move (to the archive store) or delete the file, depending on whether there is an archive store
+				if ($this->archiveRoot) {
+					
+					# Set the archive location from root
+					$archiveLocationFromRoot = $this->archiveRoot . $filename . '.rejected-submission';
+					
+					# Create the directory if necessary
+					if (!$this->makeDirectory (dirname ($archiveLocationFromRoot))) {
+						$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the archive.', "The proposed new directory was {$archiveLocationFromRoot} .");
+						return false;
+					}
+					
+					# Move the file
+					$success = rename ($fileOnServer, $archiveLocationFromRoot);
+				} else {
+					$success = @unlink ($fileOnServer);
+				}
+				
+				# Show outcome
+				if (!$success) {
+					$this->reportErrors ('There was a problem ' . ($this->archiveRoot ? 'archiving' : 'deleting') . ' the rejected file.', "The filename was {$fileOnServer} .");
 					return false;
 				}
 				
@@ -2858,6 +2881,7 @@ class pureContentEditor
 		$newFileLiveLocationFromRoot = $this->liveSiteRoot . $newFileLiveLocation;
 		
 		# Backup replaced live files if necessary
+		#!# Refactor to separate function
 		if ($this->archiveReplacedLiveFiles) {
 			if (file_exists ($newFileLiveLocationFromRoot)) {
 				$archiveLocation = $newFileLiveLocation . '.' . date ('Ymd-His');
@@ -3329,7 +3353,6 @@ class pureContentEditor
 # /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
 # Direct update rights
 # Where multiple submissions of same page have a warning that it's not the latest (if not) and have a 'delete earlier submissions' box
-# Move rejected items to filestore as same.rejected
 # Link checker
 # Option to ban top-level _directory_ creation as well as files
 # Force .menu.html links to be absolute
