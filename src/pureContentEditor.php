@@ -43,6 +43,7 @@ class pureContentEditor
 		'richtextEditorBasePath' => '/_fckeditor/',	// Location of the DHTML editing component files
 		'richtextEditorToolbarSet' => 'pureContent',	// Richtext editor Toolbar set (must exist in fckconfig-customised.js)
 		'directoryIndex' => 'index.html',		// Default directory index name
+		'templateMark' => '<!-- pureContentEditor template -->',	// Internal template mark; should not be changed
 		'newPageTemplate' => "\n<h1>Title goes here</h1>\n<p>Content starts here</p>",	// Default directory index file contents
 		'messageSignatureGreeting' => 'Best wishes,',	// Preset text for the e-mail signature to users
 		'pureContentTitleFile' => '.title.txt',	// pureContent title file name
@@ -66,13 +67,17 @@ class pureContentEditor
 		'disableDateLimitation' => false,	// Whether to disable the date limitation functionality
 		'enablePhpCheck' => true,	// Whether to check for PHP (if switched off, ensure this is enabled in the fckconfig-customised.js file)
 		'allImagesRequireAltText'	=> true,	// Whether all images require alt text to be supplied
+		'blogs'			=> '/blogs/*',				// Blog root(s) - an array or single item; if ending with a *, indicates multiple underneath this root [only * currently supported]
+		'newBlogEntryTemplate' => "\n\n\n<h1>%title</h1>\n\n<p>Content starts here</p>",	// Default blog posting file contents
+		'newBlogIndexTemplate' => "<h1>%title</h1>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogIndex ();\n?>",	// Default directory index file contents
+		'newBlogTreeRootTemplate' => "<h1>Blogs</h1>\n\n<p>Welcome to the blogs section!</p>\n<p>The following blogs are available at present:</p>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogList ();\n?>",
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.1.1';
+	var $version = '1.2.0';
 	
 	
 	# Constructor
@@ -99,20 +104,20 @@ class pureContentEditor
 		require_once ('pureContent.php');
 		require_once ('ultimateForm.php');
 		
+		# Assign the user
+		$this->user = $_SERVER['REMOTE_USER'];
+		
 		# Ensure the setup is OK
 		if (!$this->setup ($parameters)) {return false;}
+		
+		# Get the users (which will force creation if there are none)
+		if (!$this->users = $this->users ()) {return false;}
 		
 		# Get the current page and attributes from the query string
 		if (!list ($this->page, $this->action, $this->attribute) = $this->parseQueryString ()) {return false;}
 		
 		# Get the current directory for this page
 		$this->currentDirectory = $this->currentDirectory ();
-		
-		# Assign the user
-		$this->user = $_SERVER['REMOTE_USER'];
-		
-		# Get the users (which will force creation if there are none)
-		if (!$this->users = $this->users ()) {return false;}
 		
 		# Get the users (which will force creation if there are none)
 		if (!$this->administrators = $this->administrators ()) {return false;}
@@ -155,6 +160,9 @@ class pureContentEditor
 		
 		# Determine whether the page contains PHP
 		$this->pageContainsPhp = $this->pageContainsPhp ();
+		
+		# Determine whether to use blog mode
+		$this->isBlogMode = $this->isBlogMode ();
 		
 		# Add to the list of banned locations the technical file locations, if the user is not an administrator
 		if (!$this->userIsAdministrator && $this->technicalFileLocations) {$this->bannedLocations = array_merge ($this->bannedLocations, $this->technicalFileLocations);}
@@ -499,6 +507,54 @@ class pureContentEditor
 	}
 	
 	
+	# Function to determine whether the editor should run in blog mode
+	function isBlogMode ($location = false)
+	{
+		# Create a blog mode reminder
+		$this->blogModeReminder = "\n<p class=\"warning\"><strong>Reminder</strong>: Blog entries should <strong>not</strong> be a replacement for material properly organised within the main site hierarchy.<br />Make sure material that should be within the main site is put there <strong>before</strong> creating the blog posting.</p>";
+		
+		# Assume that we are not in any blog tree root directory
+		$this->isBlogTreeRoot = false;
+		
+		# Determine the root of the blog tree
+		$this->blogTreeRoot = false;
+		
+		# Return false if no blog
+		if (!$this->blogs) {return false;}
+		
+		# Ensure there is a list of blogs, even if only one
+		$blogs = application::ensureArray ($this->blogs);
+		
+		# Determine the location to check
+		$location = ($location ? $location : $this->currentDirectory);
+		
+		# Loop through to check for a match
+		foreach ($blogs as $blog) {
+			
+			# Chop off a final * if found
+			if (substr ($blog, -1) == '*') {
+				$blog = substr ($blog, 0, -1);
+				
+				# If the current directory exactly matches the root, assign it as the blog tree root
+				if ($location == $blog) {
+					$this->isBlogTreeRoot = true;
+					$this->blogTreeRoot = $blog;
+					return true;
+				}
+			}
+			
+			# Return true if the URL matches normally
+			if (ereg ('^' . $blog, $this->currentDirectory)) {
+				$this->blogTreeRoot = $blog;
+				return true;
+			}
+		}
+		
+		# Return true if not found
+		return false;
+	}
+	
+	
 	# Function to pre-process the page contents
 	function preprocessContents ($content)
 	{
@@ -686,8 +742,8 @@ class pureContentEditor
 		
 		# Determine the user's editing, page creation and folder creation rights
 		$editing = ($rights);
-		$pageCreation = (($rights == 'tree' || $rights == 'directory') && !$rootPageCreationRestrictionApplies);
-		$folderCreation = ($rights == 'tree');
+		$pageCreation = (($rights == 'tree' || $rights == 'directory') && !$rootPageCreationRestrictionApplies && !$this->isBlogTreeRoot);
+		$folderCreation = (($rights == 'tree') && ((!$this->isBlogMode) || ($this->isBlogMode && $this->isBlogTreeRoot)));
 /*	breadcrumb editing work - TODO
 		$pageCreation = (($rights === true || $rights === 'tree' || $rights === 'directory') && !$rootPageCreationRestrictionApplies);
 		$folderCreation = ($rights === true || $rights === 'tree');
@@ -818,10 +874,10 @@ class pureContentEditor
 			),
 			
 			'edit' => array (
-				'title' => 'Edit this page',
+				'title' => (($this->isBlogMode && !$this->isBlogTreeRoot) ? 'Edit this blog posting' : 'Edit this page'),
 				#!# Find a way to get this removed
 				'url' => $this->page . '?edit',	// Necessary to ensure index.html is at the end of the page
-				'tooltip' => 'Edit the current page',
+				'tooltip' => ($this->isBlogMode ? 'Edit the current blog posting' : 'Edit the current page'),
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
 				'check' => 'userCanEditCurrentPage',
@@ -838,16 +894,16 @@ class pureContentEditor
 			),
 			
 			'section' => array (
-				'title' => 'Create new section',
-				'tooltip' => 'Create a new section (set of pages)',
+				'title' => ($this->isBlogMode ? 'Create new blog' : 'Create new section here'),
+				'tooltip' => ($this->isBlogMode ? 'Create a new blog' : 'Create a new section (set of pages)'),
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
 				'check' => 'userHasFolderCreationRightsHere',
 			),
 			
 			'newPage' => array (
-				'title' => 'Create new page',
-				'tooltip' => 'Create a new page within an existing section',
+				'title' => ($this->isBlogMode ? 'Create new blog posting' : 'Create new page here'),
+				'tooltip' => ($this->isBlogMode ? 'Create a new entry within this blog' : 'Create a new page within this existing section'),
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
 				'check' => 'userHasPageCreationRightsHere',
@@ -883,7 +939,8 @@ class pureContentEditor
 			
 			'showCurrent' => array (
 				'title' => 'List pages here',
-				'tooltip' => 'List the pages in the current section (folder) of the website',
+				'title' => ($this->isBlogMode ? ($this->isBlogTreeRoot ? 'List blogs/pages here' : 'List blog entries') : 'List pages/sections here'),
+				'tooltip' => ($this->isBlogMode ? ($this->isBlogTreeRoot ? 'List the blogs and other ancillary pages available' : 'List the entries in the current blog') : 'List the pages in the current section (folder) of the website'),
 				'administratorsOnly' => false,
 				'grouping' => 'Additional',
 			),
@@ -1213,17 +1270,22 @@ class pureContentEditor
 		));
 		
 		# Determine if the page is new
-		#!# This is a poor check and should instead be determined programmatically, e.g. from the URL
-		$pageIsNew = ($this->newPageTemplate == $this->editableFileContents);
+		$pageIsNew = $this->pageIsTemplate ($this->editableFileContents);
+		
+		# Add a reminder when in blog mode
+		$heading  = '';
+		if ($this->isBlogMode) {
+			$heading .= $this->blogModeReminder;
+		}
 		
 		# Give a message for what file is being edited, and if necessary a PHP care warning
-		$heading = ($pageIsNew ? '' : $this->versionMessage (__FUNCTION__)) . ($this->pageContainsPhp ? "</p>\n<p class=\"information\">Take care when editing this page as it contains special PHP code." : '');
+		$heading .= ($pageIsNew ? '' : $this->versionMessage (__FUNCTION__)) . ($this->pageContainsPhp ? "</p>\n<p class=\"information\">Take care when editing this page as it contains special PHP code." : '');
 		
 		# If the file is a technical file, then replace the heading with a strong warning
 		$textMode = false;
 		if ($this->matchLocation ($this->technicalFileLocations, $this->page)) {
 			$textMode = true;
-			$heading  = "<p class=\"information\"><strong>Take special care when editing this page as changes to this technical file could disrupt the entire site.</strong></p><p>Alternatively, you may wish to <a href=\"/?houseStyle\">return to the list of house style / technical files</a>.</p>";
+			$heading  = "\n<p class=\"information\"><strong>Take special care when editing this page as changes to this technical file could disrupt the entire site.</strong></p><p>Alternatively, you may wish to <a href=\"/?houseStyle\">return to the list of house style / technical files</a>.</p>";
 		}
 		
 		# Add the heading
@@ -1320,8 +1382,9 @@ class pureContentEditor
 		# Show and process the form; end if not submitted
 		if (!$result = $form->process ()) {return false;}
 		
-		# Get the submitted content
+		# Get the submitted content, removing the template mark
 		$content = $result['content'];
+		$content = preg_replace ("|^{$this->templateMark}|DsiU", '', $content);
 		
 		# Determine whether to approve directly
 		$approveDirectly = ($userCanMakeFilesLiveDirectly ? $result['preapprove'][$makeAdministratorText] : false);
@@ -1342,11 +1405,11 @@ class pureContentEditor
 			} else {
 				
 				# Log the change
-				$this->logChange ("Submitted {$this->page}");
+				$this->logChange ('Submitted ' . ($this->isBlogMode ? 'blog posting' : 'page') . " {$this->page}");
 				
 				# Construct a confirmation message
-				$message = "A page has been submitted for the location:\n{$this->page}\n\nPlease log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}" . ereg_replace ('^' . $this->filestoreRoot, '', $filename) . '?review';
-				$subjectSuffix = 'page submitted for moderation';
+				$message = "A " . ($this->isBlogMode ? 'blog posting' : 'page') . " has been submitted for the location:\n{$this->page}\n\nPlease log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}" . ereg_replace ('^' . $this->filestoreRoot, '', $filename) . '?review';
+				$subjectSuffix = ($this->isBlogMode ? 'blog posting' : 'page') . ' submitted for moderation';
 			}
 		}
 		
@@ -1356,8 +1419,8 @@ class pureContentEditor
 				$this->reportErrors ('There was a problem deleting the pre-edited page.', "The filename was {$this->editableFile} .");
 				return false;
 			}
-			$this->logChange ("Pre-edited page $this->page deleted from filestore.");
-			echo "\n<p class=\"success\">The pre-edited page from which this new page was created has been deleted from the filestore.</p>";
+			$this->logChange ("Pre-edited " . ($this->isBlogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
+			echo "\n<p class=\"success\">The pre-edited " . ($this->isBlogMode ? 'blog posting' : 'page') . " from which this new version was created has been deleted from the filestore.</p>";
 		}
 		
 		# Display the submitted content and its HTML version as a confirmation
@@ -1376,18 +1439,26 @@ class pureContentEditor
 			}
 		}
 		
-		# Get the template in use
-		$template = $this->newPageTemplate;
-		
 		# Delete the template if it is one
-		if ($pageContentsIsTemplate = (md5 ($this->editableFileContents) == md5 ($template))) {
+		if ($this->pageIsTemplate ($this->editableFileContents)) {
 			if (!@unlink ($this->editableFile)) {
 				$this->reportErrors ('There was a problem deleting the template file.', "The filename was {$this->editableFile} .");
 				return false;
 			}
-			$this->logChange ("Template page $this->page deleted from filestore.");
-			echo "\n<p class=\"success\">The template page from which this new page was created has been deleted from the filestore.</p>";
+			$this->logChange ("Template " . ($this->isBlogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
+			echo "\n<p class=\"success\">The template from which this new " . ($this->isBlogMode ? 'blog posting' : 'page') . " was created has been deleted from the filestore.</p>";
 		}
+	}
+	
+	
+	# Function to determine whether a page is the template
+	function pageIsTemplate ($contents)
+	{
+		# Determine the template in use
+		$templateHtml = ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : $this->newBlogIndexTemplate) : $this->newPageTemplate);
+		
+		# Return true if it's the same as the template or starts with the template mark
+		return (($contents == $templateHtml) || (preg_match ("|^{$this->templateMark}|DsiU", $contents)));
 	}
 	
 	
@@ -1438,10 +1509,14 @@ class pureContentEditor
 			'formCompleteText'	=> false,
 			'submitButtonText'		=> 'Create new section (folder)',
 		));
-		$form->heading ('', "
-			<p>A new section (i.e. a folder) should be created when creating a new set of related pages (as distinct from a page within an existing topic area).</p>
-			" . ($currentFolders ? '<p>Current folders are <a href="#currentfolders">listed below</a>.</p>' : '') . "
-			<h2>Important guidelines/rules:</h2>
+		$form->heading ('', 
+			($this->isBlogTreeRoot ? 
+				"<p>Create a new blog here.</p>
+				" . ($currentFolders ? '<p>Current blogs are <a href="#currentfolders">listed below</a>.</p>' : '')
+			: 
+				"<p>A new section (i.e. a folder) should be created when creating a new set of related pages (as distinct from a page within an existing topic area).</p>
+				" . ($currentFolders ? '<p>Current folders are <a href="#currentfolders">listed below</a>.</p>' : '')
+			) . "<h2>Important guidelines/rules:</h2>
 			<ul class=\"spaced\">
 				<li>When creating new folders, only <strong>lowercase alphanumeric characters</strong> are allowed (spaces, underscores and hyphens are not); <strong>maximum&nbsp;{$this->maximumFileAndFolderNameLength}&nbsp;characters</strong>.</li>
 				<li>It is important that you think about <strong>permanence</strong> and the need for a <strong>hierarchical structure</strong> when creating new folders. For instance, if creating a new section for an annual report, don't create a folder called annualreports" . date ('Y') . "; instead, create an 'annualreports' folder, then inside that create one called '" . date ('Y') . "'. This is then a hierarchical structure which will work in the longer term, without having to be changed.</li>
@@ -1451,17 +1526,17 @@ class pureContentEditor
 		");
 		$form->input (array (
 			'name'			=> 'new',
-			'title'					=> 'New section (folder) name',
+			'title'					=> ($this->isBlogTreeRoot ? 'New folder name for blog' : 'New section (folder) name'),
 			'description'	=> 'Please follow the guidelines above when entering the new folder name',
 			'required'				=> true,
 			'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}$",
-			'disallow' => ($currentFolders ? array ($currentFoldersRegexp => "Sorry, <a href=\"{$folderSubmitted}\">a folder of that name</a> already exists, as shown in the list below. Please try another.") : false),
+			'disallow' => ($currentFolders ? array ($currentFoldersRegexp => "Sorry, <a href=\"{$folderSubmitted}\">a " . ($this->isBlogTreeRoot ? 'blog' : 'folder') . " of that name</a> already exists, as shown in the list below. Please try another.") : false),
 		));
 		
 		$form->input (array (
 			'name'			=> 'title',
+			'title'					=> ($this->isBlogTreeRoot ? "Title of blog (e.g. 'Webmaster's blog')" : 'Title (for breadcrumb trail)'),
 			'description'	=> 'Please capitalise correctly. This is the text that will appear in the breadcrumb trail and must not be too long.',
-			'title'					=> 'Title (for breadcrumb trail)',
 			'required'				=> true,
 		));
 		
@@ -1497,7 +1572,8 @@ class pureContentEditor
 		$this->logChange ("Created title file {$this->currentDirectory}{$new}{$this->pureContentTitleFile}");
 		
 		# Determine the template
-		$template = $this->newPageTemplate;
+		$this->isBlogMode = $this->isBlogMode ($this->currentDirectory . $new . '/');
+		$template = $this->templateMark . ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : str_replace ('%title', $result['title'], $this->newBlogIndexTemplate)) : $this->newPageTemplate);
 		
 		# Create the front page
 		$frontPageLocation = $this->filestoreRoot . $this->currentDirectory . $new . '/' . $this->directoryIndex;
@@ -1507,10 +1583,11 @@ class pureContentEditor
 		}
 		
 		# Log the change
-		$this->logChange ("Created template index page {$this->currentDirectory}{$new}{$this->directoryIndex}");
+		$this->logChange ("Created template index page {$this->currentDirectory}{$new}/{$this->directoryIndex}");
 		
 		# Notionally return true
-		echo "<p class=\"success\">The new folder and title file were successfully created. You should now <a href=\"$new/{$this->directoryIndex}?edit\">edit the front page of this new section</a>.</p>";
+		application::sendHeader (302, "{$this->editSiteUrl}{$this->currentDirectory}{$new}/{$this->directoryIndex}?edit");
+		echo "<p class=\"success\">The new folder and title file were successfully created. You should now <a href=\"{$new}/{$this->directoryIndex}?edit\">edit the front page of this new section</a>.</p>";
 		return true;
 	}
 	
@@ -1546,27 +1623,37 @@ class pureContentEditor
 	
 	
 	# Function to get the current pages here
-	function getCurrentPagesHere ()
+	function getCurrentPagesHere ($useDirectory = false, $fullTree = false, $supportedFileTypes = array ('html', 'txt'))
 	{
-		# Limit the filetypes
-		$supportedFileTypes = array ('html', 'txt');
+		# Determine the directory to use
+		$useDirectory = ($useDirectory ? $useDirectory : $this->currentDirectory);
 		
 		# Get the live and staging folders; a check is done first for whether it exists
 		$currentFilesLive = array ();
-		if (is_dir ($currentDirectoryLive = $this->liveSiteRoot . $this->currentDirectory)) {
-			$currentFilesLive = directories::listFiles ($this->liveSiteRoot . $this->currentDirectory, $supportedFileTypes, $directoryIsFromRoot = true);
+		if (is_dir ($currentDirectoryLive = $this->liveSiteRoot . $useDirectory)) {
+			if ($fullTree) {
+				$currentFilesLive = directories::flattenedFileListing ($this->liveSiteRoot . $useDirectory, $supportedFileTypes, $includeRoot = false);
+				if ($currentFilesLive) {
+					$useDirectoryNoSlash = (substr ($useDirectory, -1) == '/' ? substr ($useDirectory, 0, -1) : $useDirectory);
+					foreach ($currentFilesLive as $index => $file) {
+						$currentFilesLive[$index] = $useDirectoryNoSlash . $file;
+					}
+				}
+			} else {
+				$currentFilesLive = directories::listFiles ($this->liveSiteRoot . $useDirectory, $supportedFileTypes, $directoryIsFromRoot = true);
+				$currentFilesLive = array_keys ($currentFilesLive);
+			}
 		}
 		
 		$currentFilesStaging = array ();
 		foreach ($this->submissions as $submission => $attributes) {
-			if ($attributes['directory'] == $this->currentDirectory) {
-				$currentFilesStaging[$attributes['filename']] = $attributes;
+			if ($attributes['directory'] == $useDirectory) {
+				$currentFilesStaging[] = $attributes['filename'];
 			}
 		}
 		
 		# Merge, unique and sort the list
 		$currentFiles = array_merge ($currentFilesLive, $currentFilesStaging);
-		$currentFiles = array_keys ($currentFiles);
 		sort ($currentFiles);
 		
 		# Return the list
@@ -1586,16 +1673,20 @@ class pureContentEditor
 			# Add a slash if the resource is the folder type
 			if ($type == 'folders') {$resource .= '/';}
 			
+			# Chop the directory index if blog postings
+			if ($type == 'postings') {$resource = $this->chopDirectoryIndex ($resource);}
+			
 			# Do not list banned locations
 			if ($this->matchLocation ($this->bannedLocations, $this->currentDirectory . $resource)) {continue;}
 			
 			# Add the item, correctly formatted
 			$link = $resource . ($type == 'folders' ? $this->directoryIndex : '');
+			#!# Ideally get the title, but this means working out which file (live or staging) to open
 			$currentResourcesLinked[] = "<a href=\"$link\">$resource</a>";
 		}
 		
 		# Construct and return the HTML
-		return $html = "\n<p id=\"information\">The following are the $type which currently exist in this area:</p>" . application::htmlUl ($currentResourcesLinked);
+		return $html = "\n<p id=\"information\">The following are the " . (($this->isBlogTreeRoot && $type == 'folders') ? 'blogs' : $type) . ($type == 'postings' ? ' in this blog' : ' which currently exist in this area') . ':</p>' . application::htmlUl ($currentResourcesLinked);
 	}
 	
 	
@@ -1603,7 +1694,7 @@ class pureContentEditor
 	function currentPagesFoldersRegexp ($currentPagesFolders)
 	{
 		# Return the result, returning false if there are none
-		return ($currentPagesFolders ? '^' . implode ('|', $currentPagesFolders) . '$' : false);
+		return ($currentPagesFolders ? '^(' . implode ('|', $currentPagesFolders) . ')$' : false);
 	}
 	
 	
@@ -1619,7 +1710,7 @@ class pureContentEditor
 			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions'	=> false,
 			'formCompleteText'	=> false,
-			'submitButtonText'		=> 'Create new page',
+			'submitButtonText'		=> ($this->isBlogMode ? 'Create new blog posting' : 'Create new page'),
 			'submitTo' => "{$this->page}?" . __FUNCTION__,
 		));
 		
@@ -1628,68 +1719,156 @@ class pureContentEditor
 			$form->heading ('', "<p class=\"information\">This section currently contains no front page ({$this->directoryIndex}). You are required to create one before proceeding further.</p>");
 		}
 		
-		# Determine if the name should be editable
-		$nameIsEditable = ($this->directoryContainsIndex);
-		
-		# Show the guideline text if it's editable
-		if ($nameIsEditable) {
-			$form->heading ('', "
-				<h2>Important guidelines/rules</h2>
-				<ul class=\"spaced\">
-					<li>When creating new pages, only <strong>lowercase alphanumeric characters</strong> are allowed (spaces, underscores and hyphens are not).</li>
-					<li>The page name must <strong>end with .html</strong> .</li>
-					<li>The total length (including the suffix .html) can be a <strong>maximum of {$this->maximumFileAndFolderNameLength} characters</strong>.</li>
-					<li>It is important that you think about <strong>permanence</strong> when creating new pages. For instance, if creating a new page to hold phone numbers, don't create a page called 'phonenumbers'; instead, create a page called 'contacts' as that gives more flexibility in the long-run.</li>
-					<li>Make names <strong>guessable</strong> and <strong>self-explanatory</strong>, so <strong>avoid abbreviations</strong>, and choose words that tend towards the generic. If you can't think of a single word that describes the new section, it is acceptable in these few cases to run two words together, e.g. 'annualreports'.</li>
-				</ul>
-				<p>You are currently in the location: <strong><a href=\"{$this->currentDirectory}{$this->directoryIndex}\">{$this->currentDirectory}</a></strong></p>
-			");
+		# Switch between normal and blog mode
+		if ($this->isBlogMode) {
+			
+			# Widgets
+			$form->heading ('', $this->blogModeReminder);
+			$form->datetime (array (
+				'name' => 'date',
+				'title' => 'Date',
+				'default' => 'timestamp',
+				'editable' => false,
+				'required' => true,
+			));
+			$form->input (array (
+				'name' => 'summary',
+				'title' => 'Summary',
+				'required' => true,
+				'maxlength' => 35,
+				'size' => 35,
+				'description' => 'This will be converted to be part of the URL of the finalised posting. Please enter using standard sentence case.',
+			));
+			
+			# Check for an existing same entry
+			if ($unfinalisedData = $form->getUnfinalisedData ()) {
+				$proposedLocation = $this->newBlogPostingLocation ("{$unfinalisedData['date']['year']}-{$unfinalisedData['date']['month']}-{$unfinalisedData['date']['day']}", $unfinalisedData['summary'], $addIndex = false);
+				if ($currentPages = $this->getCurrentPagesHere ($proposedLocation)) {
+					$form->registerProblem ('postingexists', "A posting of that name and date <a href=\"{$proposedLocation}\">already exists</a> - please rename, or edit the existing posting if relevant.");
+				}
+			}
+			
+		} else {
+			
+			# Determine if the name should be editable
+			$nameIsEditable = ($this->directoryContainsIndex);
+			
+			# Show the guideline text if it's editable
+			if ($nameIsEditable) {
+				$form->heading ('', "
+					<h2>Important guidelines/rules</h2>
+					<ul class=\"spaced\">
+						<li>When creating new pages, only <strong>lowercase alphanumeric characters</strong> are allowed (spaces, underscores and hyphens are not).</li>
+						<li>The page name must <strong>end with .html</strong> .</li>
+						<li>The total length (including the suffix .html) can be a <strong>maximum of {$this->maximumFileAndFolderNameLength} characters</strong>.</li>
+						<li>It is important that you think about <strong>permanence</strong> when creating new pages. For instance, if creating a new page to hold phone numbers, don't create a page called 'phonenumbers'; instead, create a page called 'contacts' as that gives more flexibility in the long-run.</li>
+						<li>Make names <strong>guessable</strong> and <strong>self-explanatory</strong>, so <strong>avoid abbreviations</strong>, and choose words that tend towards the generic. If you can't think of a single word that describes the new section, it is acceptable in these few cases to run two words together, e.g. 'annualreports'.</li>
+					</ul>
+					<p>You are currently in the location: <strong><a href=\"{$this->currentDirectory}{$this->directoryIndex}\">{$this->currentDirectory}</a></strong></p>
+				");
+			}
+			
+			# Define a regexp for the current page
+			$currentPagesRegexp = $this->currentPagesFoldersRegexp ($currentPages);
+			
+			# Hack to get the current page submitted, used for a link if necessary
+			$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new']) : '');
+			
+			# Page name
+			$form->input (array (
+				'name'			=> 'new',
+				'title'					=> 'New page filename',
+				'description'	=> ($nameIsEditable ? 'Please follow the guidelines above when entering the new filename' : ''),
+				'required'				=> true,
+				'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}.html$",
+				'default'  => $newPageName = ($nameIsEditable ? '' : $this->directoryIndex),
+				'editable' => $nameIsEditable,
+				'disallow' => ($currentPages ? array ($currentPagesRegexp => "Sorry, <a href=\"{$pageSubmitted}\">a page of that name</a> already exists, as shown in the list below. Please try another.") : false),
+			));
 		}
-		
-		# Define a regexp for the current page
-		$currentPagesRegexp = $this->currentPagesFoldersRegexp ($currentPages);
-		
-		# Hack to get the current page submitted, used for a link if necessary
-		$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new']) : '');
-		
-		# Page name
-		$form->input (array (
-			'name'			=> 'new',
-			'title'					=> 'New page filename',
-			'description'	=> ($nameIsEditable ? 'Please follow the guidelines above when entering the new filename' : ''),
-			'required'				=> true,
-			'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}.html$",
-			'default'  => $newPageName = ($nameIsEditable ? '' : $this->directoryIndex),
-			'editable' => $nameIsEditable,
-			'disallow' => ($currentPages ? array ($currentPagesRegexp => "Sorry, <a href=\"{$pageSubmitted}\">a page of that name</a> already exists, as shown in the list below. Please try another.") : false),
-		));
 		
 		# Show the form and get any results
 		$result = $form->process ();
 		
 		# Show the folders which currently exist if there are any
 		if (!$result) {
-			echo $this->listCurrentResources ($currentPages, 'pages');
+			if (!$this->isBlogMode) {
+				echo $this->listCurrentResources ($currentPages, 'pages');
+			}
 			return false;
 		}
 		
-		#!# There is a lot of duplication here - refactor out the creation of a new page
+		# Construct the URL for blog mode
+		if ($this->isBlogMode) {
+			
+			# Get the current blog directory
+			$newFile = $this->newBlogPostingLocation ($result['date'], $result['summary']);
+			
+		} else {
+			
+			# Determine the new file location
+			$newFile = $this->currentDirectory . $result['new'];
+		}
 		
-		# Determine the path
-		$newFile = $this->currentDirectory . $result['new'];
+		#!# There is a lot of duplication around here - refactor out the creation of a new page
+		
+		# Get the template in use
+		$template = $this->templateMark . ($this->isBlogMode ? str_replace ('%title', ucfirst ($result['summary']), $this->newBlogEntryTemplate) . "\n\n<p class=\"signature\"><em>{$this->users[$this->user]['Forename']}</em></p>" : $this->newPageTemplate);
 		
 		# Create the file
-		if (!application::createFileFromFullPath ($this->filestoreRoot . $newFile, $this->newPageTemplate, $addStamp = true)) {
+		if (!application::createFileFromFullPath ($this->filestoreRoot . $newFile, $template, $addStamp = true)) {
 			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new file in the filestore.', "The filename was {$this->filestoreRoot}{$newFile} .");
 			return false;
 		}
 		
 		# Log the change
-		$this->logChange ("Created template page {$newFile}");
+		$this->logChange ("Created template " . ($this->isBlogMode ? 'blog posting' : 'page') . " {$newFile}");
 		
-		# Notionally return true
-		echo "<p class=\"success\">The new file was successfully created. You can now <a href=\"{$result['new']}?edit\">edit the new page</a>.</p>";
+		# Notionally return true, but ideally redirect the user directly
+		application::sendHeader (302, "{$this->editSiteUrl}{$newFile}?edit");
+		echo "<p class=\"success\">The new file was successfully created. You can now <a href=\"{$newFile}?edit\">edit the new " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a>.</p>";
 		return true;
+	}
+	
+	
+	# Function to assembe a new blog posting location
+	function newBlogPostingLocation ($date, $summary, $addIndex = true)
+	{
+		# Asembe the pieces
+		$currentBlogRoot = $this->getCurrentBlogRoot ();
+		$date = str_replace ('-', '/', $date);
+		$urlSlug = $this->createUrlSlug ($summary);
+		$newFile = $currentBlogRoot . $date . '/' . $urlSlug . '/' . ($addIndex ? 'index.html' : '');
+		
+		# Return the assembled string
+		return $newFile;
+	}
+	
+	
+	# Function to get the current blog's root
+	function getCurrentBlogRoot ()
+	{
+		# Do a match
+		ereg ('^' . preg_quote ($this->blogTreeRoot) . '([^/]+)/', $this->currentDirectory, $matches);
+		
+		# Assemble the root
+		$currentBlogRoot = (isSet ($matches[1]) ? $this->blogTreeRoot . $matches[1] . '/' : NULL);
+		
+		# Return the root
+		return $currentBlogRoot;
+	}
+	
+	
+	# Function to create a URL slug
+	#!# Solution based on http://www.thinkingphp.org/2006/10/19/title-to-url-slug-conversion/ ; consider instead using something more like Wordpress' sanitize_title, as here: http://trac.wordpress.org/browser/trunk/wp-includes/functions-formatting.php?rev=1481
+	function createUrlSlug ($string)
+	{
+		# Define the conversions
+		$unPretty = array('/ä/', '/ö/', '/ü/', '/Ä/', '/Ö/', '/Ü/', '/ß/', '/\s?-\s?/', '/\s?_\s?/', '/\s?\/\s?/', '/\s?\\\s?/', '/\s/', '/"/', '/\'/', '/!/', '/\./');
+		$pretty   = array('ae', 'oe', 'ue', 'Ae', 'Oe', 'Ue', 'ss', '-', '-', '-', '-', '-', '', '', '', '');
+		
+		# Convert
+		return strtolower (preg_replace ($unPretty, $pretty, $string));
 	}
 	
 	
@@ -1699,17 +1878,31 @@ class pureContentEditor
 		# Show the current location
 		$html  = "\n<p class=\"information\">You are currently in the location: {$this->currentDirectory}</p>";
 		
-		# List the current pages
-		$html .= "\n<h2>Sub-sections (folders) in this section</h2>";
-		$currentFolders = $this->getCurrentFoldersHere ();
-		$html .= ($currentFolders ? $this->listCurrentResources ($currentFolders, 'folders') : "\n<p>There are no folders in this area at present.</p>");
-		$html .= "\n<p>You may wish to <a href=\"?section\">create a new section (folder)</a>" . ($currentFolders ? ' if there is not a relevant one already' : '') . '.</p>';
-		
-		# List the current pages
-		$html .= "\n<h2>Pages in this section</h2>";
-		$currentPages = $this->getCurrentPagesHere ();
-		$html .= ($currentPages ? $this->listCurrentResources ($currentPages, 'pages') : "\n<p>There are no pages in this area at present.</p>");
-		$html .= "\n<p>You may wish to <a href=\"?newPage\">create a new page</a>" . ($currentPages ? ' if there is not a relevant one already' : '') . '.</p>';
+		# Switch between normal and blog mode
+		if ($this->isBlogMode && !$this->isBlogTreeRoot) {
+			
+			# Get the list of postings
+			$currentBlogRoot = $this->getCurrentBlogRoot ();
+			$postings = $this->getCurrentPagesHere ($currentBlogRoot, $asTree = true, 'html');
+			$postings = array_diff ($postings, array ($currentBlogRoot . 'index.html'));
+			rsort ($postings);
+			$html .= ($postings ? $this->listCurrentResources ($postings, 'postings') : "\n<p>There are no blog postings in this area at present.</p>");
+			
+		# Normal mode
+		} else {
+			
+			# List the current pages
+			$html .= "\n<h2>" . ($this->isBlogMode ? 'Blogs in this section' : 'Sub-sections (folders) in this section') . '</h2>';
+			$currentFolders = $this->getCurrentFoldersHere ();
+			$html .= ($currentFolders ? $this->listCurrentResources ($currentFolders, 'folders') : "\n<p>There are no " . ($this->isBlogMode ? 'blogs' : 'folders') . " in this area at present.</p>");
+			$html .= "\n<p>You may wish to <a href=\"?section\">create a new " . ($this->isBlogMode ? 'blog' : 'section (folder)') . '</a>' . ($currentFolders ? ' if there is not a relevant one already' : '') . '.</p>';
+			
+			# List the current pages
+			$html .= "\n<h2>" . ($this->isBlogMode ? 'Ancillary pages' : 'Pages') . ' in this section</h2>';
+			$currentPages = $this->getCurrentPagesHere ();
+			$html .= ($currentPages ? $this->listCurrentResources ($currentPages, 'pages') : "\n<p>There are no pages in this area at present.</p>");
+			$html .= "\n<p>You may wish to <a href=\"?newPage\">create a new page</a>" . ($currentPages ? ' if there is not a relevant one already' : '') . '.</p>';
+		}
 		
 		# Show the HTML
 		echo $html;
@@ -2732,7 +2925,8 @@ class pureContentEditor
 		# Show the list if required
 		$showList = (!$filename || ($filename && (!isSet ($this->submissions[$filename]))));
 		if ($showList) {
-			echo $this->listSubmissions ();
+			#!# Perhaps have a mode which forces clearance of template files that have been left behind
+			echo $this->listSubmissions ($reload = true);
 			return;
 		}
 		
@@ -2850,9 +3044,9 @@ class pureContentEditor
 				
 				# Mail the user if required
 				if ($mailUser) {
-					$compiledMessage = "The page you submitted, $fileLocation" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on {$fileTimestamp}, has been rejected and thus deleted.";
+					$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, $fileLocation" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on {$fileTimestamp}, has been rejected and thus deleted.";
 					if ($result['message']) {$compiledMessage .= "\n\n{$result['message']}";}
-					$this->sendMail ($file['username'], $compiledMessage, $subjectSuffix = 'page submission rejected');
+					$this->sendMail ($file['username'], $compiledMessage, $subjectSuffix = ($this->isBlogMode ? 'blog posting' : 'page') . ' submission rejected');
 				}
 				
 				break;
@@ -2860,14 +3054,14 @@ class pureContentEditor
 			case 'edit':
 				# Redirect the user to the new page; take no other action. The previous version will need to be deleted manually by the administrator
 				application::sendHeader (302, "{$this->editSiteUrl}{$filename}?edit");
-				echo "\n<p><a href=\"{$filename}?edit\">Click here to edit the file</a> (as your browser has not redirected you automatically).</p>";
+				echo "\n<p><a href=\"{$filename}?edit\">Click here to edit the " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a> (as your browser has not redirected you automatically).</p>";
 				
 				break;
 				
 			case 'message':
 				# Send the message
-				$compiledMessage = "With regard to the page you submitted, {$fileLocation}" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on {$fileTimestamp}:\n\n{$result['message']}";
-				$this->sendMail ($this->submissions[$filename]['username'], $compiledMessage, 'message regarding a page you submitted');
+				$compiledMessage = 'With regard to the ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on {$fileTimestamp}:\n\n{$result['message']}";
+				$this->sendMail ($this->submissions[$filename]['username'], $compiledMessage, 'message regarding a ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' you submitted');
 				break;
 		}
 	}
@@ -2895,7 +3089,7 @@ class pureContentEditor
 				
 				# Copy the file across
 				if (!@copy ($newFileLiveLocationFromRoot, $archiveLocationFromRoot)) {
-					$this->reportErrors ('The new file was not approved, as there was a problem archiving the existing file on the live site of the same name.', "This archived file would have been at {$archiveLocationFromRoot} .");
+					$this->reportErrors ('The new ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' was not approved, as there was a problem archiving the existing file on the live site of the same name.', "This archived file would have been at {$archiveLocationFromRoot} .");
 					return false;
 				}
 				$this->logChange ("Archived existing file on the live site $newFileLiveLocation to $archiveLocationFromRoot");
@@ -2907,16 +3101,19 @@ class pureContentEditor
 			$this->reportErrors ('There was a problem installing the approved file on the live site.', "This new file would have been at $newFileLiveLocation on the live site.");
 			return false;
 		}
-		$this->logChange (($directly ? 'New page directly' : "Submitted file $submittedFile approved and") . " saved to $newFileLiveLocation on live site");
+		$this->logChange (($directly ? 'New ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' directly' : "Submitted file $submittedFile approved and") . " saved to $newFileLiveLocation on live site");
 		$newFileLiveLocationChopped = $this->chopDirectoryIndex ($newFileLiveLocation);
-		echo "<p class=\"success\">The file has been approved and is now online, at: <a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$newFileLiveLocationChopped}\">{$this->liveSiteUrl}{$newFileLiveLocationChopped}</a>.</p>";
+		if ($this->isBlogMode) {
+			$currentBlogRoot = $this->getCurrentBlogRoot ();
+		}
+		echo "<p class=\"success\">The " . ($this->isBlogMode ? 'blog posting' : 'page') . ' has been approved and is now online, at: ' . ($this->isBlogMode ? "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$currentBlogRoot}\">{$this->liveSiteUrl}{$currentBlogRoot}</a> or at the posting-specific location of: " : '') . "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$newFileLiveLocationChopped}\">{$this->liveSiteUrl}{$newFileLiveLocationChopped}</a>.</p>";
 		
 		# Mail the user if required
 		if ($mailUser) {
 			$fileTimestamp = $this->convertTimestamp ($this->submissions[$submittedFile]['timestamp']);
-			$compiledMessage = "The page you submitted, {$newFileLiveLocation}" . ($this->submissions[$submittedFile]['title'] ? " ({$this->submissions[$submittedFile]['title']})" : ' ') . ", on {$fileTimestamp}, has been approved and is now online, at:\n\n{$this->liveSiteUrl}{$newFileLiveLocationChopped}";
+			$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$newFileLiveLocation}" . ($this->submissions[$submittedFile]['title'] ? " ({$this->submissions[$submittedFile]['title']})" : ' ') . ", on {$fileTimestamp}, has been approved and is now online, at:\n\n{$this->liveSiteUrl}{$newFileLiveLocationChopped}";
 			if ($extraMessage) {$compiledMessage .= "\n\n{$extraMessage}";}
-			$this->sendMail ($this->submissions[$submittedFile]['username'], $compiledMessage, 'page approved');
+			$this->sendMail ($this->submissions[$submittedFile]['username'], $compiledMessage, ($this->isBlogMode ? 'blog posting' : 'page') . ' approved');
 		}
 		
 		# Delete the staging file and log the change
@@ -2948,8 +3145,8 @@ class pureContentEditor
 		# Do not attempt to mail the administrator if no administrator address is available (which could be why an error is being thrown)
 		if (!$this->serverAdministrator) {return false;}
 		
-		# Construct the message
-		$introduction = 'The following ' . (count ($errors) == 1 ? 'problem has' : 'problems have') . ' been encountered:';
+		# Construct the message; note that $this->users may not yet exist so it can't be used to get the user's real name
+		$introduction = 'The following ' . (count ($errors) == 1 ? 'problem was' : 'problems were') . " encountered (by user {$this->user}):";
 		$message = "\nDear webserver administrator,\n\n$introduction\n\n" . '- ' . implode ("\n\n- ", $errors);
 		
 		# If there is provide information, add this
@@ -3117,9 +3314,10 @@ class pureContentEditor
 	{
 		# Determine whether to exclude files the size of the template
 		$excludeFileTemplate = ($excludeTemplateFiles ? $this->newPageTemplate : false);
+		$excludeContentsRegexp = ($excludeTemplateFiles ? '^' . $this->templateMark : false);
 		
 		# Get the file listing, excluding files the size of the template (in theory this may catch others, but in practice this is good enough - adding an md5() check would require opening all files and would reduce performance
-		$files = directories::flattenedFileListing ($this->filestoreRoot, array (), $includeRoot = false, $excludeFileTemplate);
+		$files = directories::flattenedFileListing ($this->filestoreRoot, array (), $includeRoot = false, $excludeFileTemplate, $excludeContentsRegexp);
 		
 		# Filter and organise the file listing
 		$files = $this->submissionsFiltered ($files);
@@ -3327,7 +3525,7 @@ class pureContentEditor
 #R# Implement a better algorithm for typeOfFile ()
 #R# Implement the notion of a currently active permission which is definitive and which can be looked up against
 # Groups facility
-# <table class="lines"> - has to wait for FCKeditor to support this: see https://sourceforge.net/tracker/index.php?func=detail&aid=1228908&group_id=75348&atid=543656
+# <table class="lines"> - has to wait for FCKeditor to support this: see http://dev.fckeditor.net/ticket/825
 # Specialised gui for menu and title files (rather than using 'list pages' or entering the URL directly)
 # Automatic deletion of permissions when folders don't exist, if a setting is turned on for this (NB needs to distinguish between not present and no permission - may not be possible)
 # More extensive menu editing system for the switch in edit ()
@@ -3350,7 +3548,7 @@ class pureContentEditor
 # Enable explicit creation of .title.txt files
 # Sort by ... for reviewing
 # Diffing function - apparently wikimedia includes a good PHP class for this - see http://cvs.sourceforge.net/viewcvs.py/wikipedia/phase3/includes/  - difference engine
-# /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
+# Cookie, /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
 # Direct update rights
 # Where multiple submissions of same page have a warning that it's not the latest (if not) and have a 'delete earlier submissions' box
 # Link checker
@@ -3363,7 +3561,6 @@ class pureContentEditor
 # Messaging facility should state which page the message is being sent on
 # Change all file writes so that writability check is done in setup, removing the need for error reporting
 # † sometimes not being escaped properly
-# /sitetech/ area editing GUI (for admins)
 # Start/end date should be in user not permission side
 # Consider making administrator rights set as a select box rather than a difficultly-titled checkbox
 
