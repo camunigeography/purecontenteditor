@@ -56,7 +56,7 @@ class pureContentEditor
 		'developmentEnvironment' => false,		// Whether to run in development environment mode
 		'hideDirectoryNames' => array ('.AppleDouble', 'Network Trash Folder', 'TheVolumeSettingsFolder'), // Directory names to exclude from directory listings
 		'wordwrapViewedSubmittedHtml' => false,	// Whether to wordwrap submitted HTML in the confirmation display (will not affect the file itself)
-		'bannedLocations' => array (),			// List of banned locations where pages/folders cannot be created and which will not be listed
+		'bannedLocations' => array (),			// List of banned locations where pages/folders cannot be created (even by an administrator) and which will not be listed
 		'technicalFileLocations' => array ('/sitetech/*', '/robots.txt',  '/.htaccess', ),	// List of technical file locations, which are administrator-only
 		'allowPageCreationAtRootLevel' => false,	// Whether to allow page creation at root level (e.g. example.com/page.html )
 		'archiveReplacedLiveFiles' => true,		// Whether to backup files on the live site which have been replaced (either true [put in same location], false [no archiving] or a path
@@ -65,6 +65,7 @@ class pureContentEditor
 		'imageAlignmentByClass'	=> true,		// Replace align="foo" with class="foo" for images
 		'logout'	=> false,	// False if there is no logout available from the authentication agent or the location of the page
 		'disableDateLimitation' => false,	// Whether to disable the date limitation functionality
+		'allowNewLocation'		=> true,	// Whether to allow the adminisrator to approve the page at a new location
 		'enablePhpCheck' => true,	// Whether to check for PHP (if switched off, ensure this is enabled in the fckconfig-customised.js file)
 		'allImagesRequireAltText'	=> true,	// Whether all images require alt text to be supplied
 		'blogs'			=> '/blogs/*',				// Blog root(s) - an array or single item; if ending with a *, indicates multiple underneath this root [only * currently supported]
@@ -77,7 +78,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.2.0';
+	var $version = '1.3.0';
 	
 	
 	# Constructor
@@ -102,7 +103,7 @@ class pureContentEditor
 		require_once ('csv.php');
 		require_once ('directories.php');
 		require_once ('pureContent.php');
-		require_once ('ultimateForm.php');
+		require_once ('ultimateForm-dev.php');
 		
 		# Assign the user
 		$this->user = $_SERVER['REMOTE_USER'];
@@ -417,11 +418,10 @@ class pureContentEditor
 			}
 			
 			# Otherwise throw a 404
-			echo "\n</div>";
 			application::sendHeader (404);
-			echo "\n" . '<h1>Page not found</h1>';
-			echo "\n" . '<p class="failure">The page you requested cannot be found.</p>';
-			echo "\n<div>";
+			$html  = "\n" . '<h1>Page not found</h1>';
+			$html .= "\n" . '<p class="failure">The page you requested cannot be found.</p>';
+			echo $html;
 			return false;
 		}
 		
@@ -774,7 +774,7 @@ class pureContentEditor
 	}
 	
 	
-	# Function to perform a location match
+	# Function to perform a location match; returns either a string (equating to true) or false
 	function matchLocation ($locations, $test)
 	{
 		# Loop through each location (which are ordered such that overriding rights are listed (and will thus be matched) first (i.e. tree>directory>page)
@@ -782,14 +782,14 @@ class pureContentEditor
 			
 			# Check for an exact match
 			if ($location == $test) {
-				return 'page';
+				return 'page';	// i.e. true
 			}
 			
 			# Check for pages in the same directory
 			if (substr ($location, -1) == '/') {
 				$page = ereg_replace ('^' . $location, '', $test);
 				if (strpos ($page, '/') === false) {
-					return 'directory';
+					return 'directory';	// i.e. true
 				}
 			}
 			
@@ -797,7 +797,7 @@ class pureContentEditor
 			if (substr ($location, -1) == '*') {
 				if (ereg ('^' . $location, $test)) {
 					if ($location != ereg_replace ('^' . $location, '', $test)) {
-						return 'tree';
+						return 'tree';	// i.e. true
 					}
 				}
 			}
@@ -1177,24 +1177,27 @@ class pureContentEditor
 	function help ()
 	{
 		# Create the logout link
-		echo "\n\n" . '<div id="purecontenteditorhelp">';
-		echo "\n<h1>Tips/help/about</h1>";
-		echo "\n<p>Welcome to the pureContentEditor! Use of this system is intended to be largely self-explanatory: you can browse around the site as normal, and perform various actions using the menu buttons above.</p>";
-		echo "\n<h2>Tips</h2>";
-		echo "\n" . '<p>A <a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf" target="_blank">tip sheet</a> can be printed off and stuck next to your computer.</p>';
-		echo "\n<h2>Requirements</h2>";
-		echo "\n" . '<p>Most modern browsers, as <a href="http://www.fckeditor.net/" target="external">listed at fckeditor.net</a>, are supported.</p>';
-		echo "\n<p>If your browser has a popup blocker, this must be disabled for this site.</p>";
-		echo "\n<p>The spell-checker facility requires IESpell and as such only works on the Internet Explorer browser.</p>";
-		echo "\n<p>When you are finished, please use the 'Log out' button in the menu above, to protect the integrity of your account.</p>";
-		echo "\n<h2>If you are having problems</h2>";
-		echo "\n<p>To get help on use of the system, <a href=\"{$this->page}?message\">contact an administrator</a> of the system.</p>";
-		echo "\n<h2>About</h2>";
-		echo "\n" . '<p>This system runs on the <strong>pureContentEditor</strong> software, which has been written by Martin Lucas-Smith, University of Cambridge. It is released under the <a href="http://opensource.org/licenses/gpl-license.php" target="external">GNU Public License</a>. The system is free, is installed at your own risk and no support is provided by the author, except where explicitly arranged.</p>';
-		echo "\n" . '<p>It makes use of the DHTML editor component <a href="http://www.fckeditor.net/" target="external">FCKeditor</a>, which is also licenced under the GPL.</p>';
-		echo "\n" . '<p><a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/" target="external">Technical documentation and information on new releases</a> on the pureContentEditor software is available.</p>';
-		echo "\n<p>This is version <em>{$this->version}</em> of the pureContentEditor.</p>";
-		echo "\n" . '</div>';
+		$html  = "\n\n" . '<div id="purecontenteditorhelp">';
+		$html .= "\n<h1>Tips/help/about</h1>";
+		$html .= "\n<p>Welcome to the pureContentEditor! Use of this system is intended to be largely self-explanatory: you can browse around the site as normal, and perform various actions using the menu buttons above.</p>";
+		$html .= "\n<h2>Tips</h2>";
+		$html .= "\n" . '<p>A <a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf" target="_blank">tip sheet</a> can be printed off and stuck next to your computer.</p>';
+		$html .= "\n<h2>Requirements</h2>";
+		$html .= "\n" . '<p>Most modern browsers, as <a href="http://www.fckeditor.net/" target="external">listed at fckeditor.net</a>, are supported.</p>';
+		$html .= "\n<p>If your browser has a popup blocker, this must be disabled for this site.</p>";
+		$html .= "\n<p>The spell-checker facility requires IESpell and as such only works on the Internet Explorer browser.</p>";
+		$html .= "\n<p>When you are finished, please use the 'Log out' button in the menu above, to protect the integrity of your account.</p>";
+		$html .= "\n<h2>If you are having problems</h2>";
+		$html .= "\n<p>To get help on use of the system, <a href=\"{$this->page}?message\">contact an administrator</a> of the system.</p>";
+		$html .= "\n<h2>About</h2>";
+		$html .= "\n" . '<p>This system runs on the <strong>pureContentEditor</strong> software, which has been written by Martin Lucas-Smith, University of Cambridge. It is released under the <a href="http://opensource.org/licenses/gpl-license.php" target="external">GNU Public License</a>. The system is free, is installed at your own risk and no support is provided by the author, except where explicitly arranged.</p>';
+		$html .= "\n" . '<p>It makes use of the DHTML editor component <a href="http://www.fckeditor.net/" target="external">FCKeditor</a>, which is also licenced under the GPL.</p>';
+		$html .= "\n" . '<p><a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/" target="external">Technical documentation and information on new releases</a> on the pureContentEditor software is available.</p>';
+		$html .= "\n<p>This is version <em>{$this->version}</em> of the pureContentEditor.</p>";
+		$html .= "\n" . '</div>';
+		
+		# Show the HTML
+		echo $html;
 	}
 	
 	
@@ -1368,11 +1371,11 @@ class pureContentEditor
 		
 		# Allow administrators to make live directly
 		if ($userCanMakeFilesLiveDirectly) {
-			$makeAdministratorText = 'Make live directly (do not add to approval list)';
+			$makeLiveDirectlyText = 'Make live directly (do not add to approval list)';
 			$form->checkboxes (array (
 			    'name'			=> 'preapprove',
-			    'values'			=> array ($makeAdministratorText,),
-			    'title'					=> $makeAdministratorText,
+			    'values'			=> array ($makeLiveDirectlyText,),
+			    'title'					=> $makeLiveDirectlyText,
 			));
 		}
 		
@@ -1387,7 +1390,7 @@ class pureContentEditor
 		$content = preg_replace ("|^{$this->templateMark}|DsiU", '', $content);
 		
 		# Determine whether to approve directly
-		$approveDirectly = ($userCanMakeFilesLiveDirectly ? $result['preapprove'][$makeAdministratorText] : false);
+		$approveDirectly = ($userCanMakeFilesLiveDirectly ? $result['preapprove'][$makeLiveDirectlyText] : false);
 		
 		# Save the file to the filestore or the live site as appropriate
 		if ($approveDirectly) {
@@ -2919,6 +2922,53 @@ class pureContentEditor
 	}
 	
 	
+	# Function to determine submissions in the same location
+	function moreSubmissionsInSameLocation ($currentSubmission, $earlierFilesOnly = true, $excludeCurrent = true, $organiseByUser = true)
+	{
+		# Get the current file location
+		$fileLocation = $this->submissions[$currentSubmission]['directory'] . $this->submissions[$currentSubmission]['filename'];
+		
+		# Get the timestamp of current submission
+		$currentSubmissionTimestamp = $this->stringToNumericTimestamp ($this->submissions[$currentSubmission]['timestamp']);
+		
+		# Find files in the same location
+		$total = 0;
+		$moreSubmissionsInSameLocation = array ();
+		foreach ($this->submissions as $submission => $attributes) {
+			
+			# Skip current file, if required
+			if ($excludeCurrent && ($submission == $currentSubmission)) {continue;}
+			
+			# Exclude later files if necessary
+			if ($earlierFilesOnly) {
+				$timestamp = $this->stringToNumericTimestamp ($attributes['timestamp']);
+				if ($timestamp >= $currentSubmissionTimestamp) {continue;}	// Skip
+			}
+			
+			# If the file location is the same, add to the list
+			if ($attributes['directory'] . $attributes['filename'] == $fileLocation) {
+				$total++;
+				if ($organiseByUser) {
+					$moreSubmissionsInSameLocation[$attributes['username']][$submission] = $attributes;
+				} else {
+					$moreSubmissionsInSameLocation[$submission] = $attributes;
+				}
+			}
+		}
+		
+		# Return the result
+		return array ($moreSubmissionsInSameLocation, $total);
+	}
+	
+	
+	# Function to get a purely numeric timestamp
+	function stringToNumericTimestamp ($string)
+	{
+		# Return the value as an integer
+		return (str_replace ('-', '', $string)) + 0;	// +0 reliably casts as an integer
+	}
+	
+	
 	# Function to list and review submissions
 	function review ($filename)
 	{
@@ -2948,6 +2998,9 @@ class pureContentEditor
 		$fileLocation = $this->submissions[$filename]['directory'] . $this->submissions[$filename]['filename'];
 		$form->heading ('', "<p class=\"information\">Please review the proposed <strong>" . $fileDescription . '</strong> below, submitted by ' . $this->convertUsername ($this->submissions[$filename]['username']) . ' on ' . $this->convertTimestamp ($this->submissions[$filename]['timestamp']) . ", and approve if it is acceptable. This is for the location " . (!file_exists ($this->liveSiteRoot . $fileLocation) ? "{$fileLocation} " : "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$fileLocation}\">{$fileLocation}</a>") . '.</p>');
 		
+		# Determine if there are earlier submissions of the same page
+		list ($moreSubmissionsInSameLocation, $total) = $this->moreSubmissionsInSameLocation ($filename);
+		
 		# Define the actions
 		$actions = array (
 			'approve-message'	=> 'Approve it (move to live site) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' †',
@@ -2958,120 +3011,174 @@ class pureContentEditor
 			'message'			=> 'Only send a message to its creator (add a message below) †',
 		);
 		$form->radiobuttons (array (
-			'name'			=> 'action',
+			'name'				=> 'action',
 			'values'			=> $actions,
-			'title'					=> 'Action',
-			'required'		=> true,
+			'title'				=> 'Action',
+			'required'			=> true,
 		));
+		if ($moreSubmissionsInSameLocation) {
+			$deleteEarlierText = "Also delete earlier submissions ({$total}) of this same page";
+			$form->checkboxes (array (
+			    'name'			=> 'deleteearlier',
+			    'values'			=> array ($deleteEarlierText,),
+			    'title'					=> 'Delete earlier submissions?',
+				'default' => array ($deleteEarlierText),
+				'description' => 'This is independent of whatever action you select above.<br />No e-mail will be sent for these additional submissions.',
+			));
+		}
+		if ($this->allowNewLocation) {
+			$form->input (array (
+				'name'			=> 'location',
+				'title'					=> 'Approve to new location',
+				'description'		=> 'If <em>necessary</em>, enter a different URL to approve it to, starting with&nbsp;/&nbsp;.',
+				'regexp'		=> '^/',
+			));
+		}
 		$textareaWidget = $this->additionalMessageWidget;
-		$textareaWidget['title'] .= ' († only)';
+		$textareaWidget['title'] .= ' (&dagger; only)';
 		$form->textarea ($textareaWidget);
 		
-		# Ensure a message is entered if messaging
+		# Do pre-submission checks
 		if ($unfinalisedData = $form->getUnfinalisedData ()) {
+			
+			# Ensure a message is entered if messaging
 			if (($unfinalisedData['action'] == 'message') && empty ($unfinalisedData['message'])) {
 				$form->registerProblem ('nomessage', "You didn't enter a message!");
 			}
+			
+			# Ensure a specified new location is not in a banned area
+			if ($this->allowNewLocation) {
+				if ($this->matchLocation ($this->bannedLocations, $unfinalisedData['location'])) {
+					$form->registerProblem ('bannedArea', 'Changes cannot be made to pages in the new location you specified.');
+				}
+			}
 		}
-		
-		# Get the file contents
-		$fileOnServer = $this->filestoreRoot . $filename;
 		
 		# If the form is not processed, show the page
 		if (!$result = $form->process ()) {
+			$fileOnServer = $this->filestoreRoot . $filename;
 			chdir (str_replace ('\\', '/', dirname ($fileOnServer)));
 			echo "\n<hr />";
 			echo $this->showMaterial ($this->editableFileContents, 'information');
 			return;
 		}
 		
-		# Determine the file attributes
-		$file = $this->submissions[$filename];
-		
-		# Construct the file location and date
-		$fileLocation = $file['directory'] . $file['filename'];
-		$fileTimestamp = $this->convertTimestamp ($file['timestamp']);
-		
 		# Flag to mail the user if explicitly requested or an additional message added
 		$mailUser = (strpos ($result['action'], 'message') !== false);
+		
+		# Empty the list of more submissions in the same location if the user doesn't want these deleted
+		if ($moreSubmissionsInSameLocation) {
+			if (!$result['deleteearlier'][$deleteEarlierText]) {
+				$moreSubmissionsInSameLocation = array ();
+			}
+		}
+		$thisUserMoreSubmissionsTotal = (isSet ($moreSubmissionsInSameLocation[$this->submissions[$filename]['username']]) ? count ($moreSubmissionsInSameLocation[$this->submissions[$filename]['username']]) : 0);
+		
+		# Reject earlier submissions, if any; this is done first so that any listing excludes ones being deleted in the overall operation
+		if ($moreSubmissionsInSameLocation) {
+			foreach ($moreSubmissionsInSameLocation as $user => $submissions) {
+				foreach ($submissions as $moreSubmissionsFilename => $attributes) {
+					if (!$this->reject ($moreSubmissionsFilename, $silentMode = true)) {
+						return false;	// Don't continue if there's a problem
+					}
+				}
+			}
+			echo "\n<p class=\"success\">The earlier submissions of this page were deleted successfully.</p>";
+		}
 		
 		# Take action depending on the result
 		switch ($result['action']) {
 			case 'approve-message':
 			case 'approve':
-				$this->makeLive ($filename, $this->editableFileContents, $directly = false, $mailUser, $result['message']);
+				$this->makeLive ($filename, $this->editableFileContents, $directly = false, (isSet ($result['location']) ? $result['location'] : false), $mailUser, $result['message'], $thisUserMoreSubmissionsTotal);
 				break;
 				
 			case 'reject-message':
 			case 'reject':
-				
-				# Move (to the archive store) or delete the file, depending on whether there is an archive store
-				if ($this->archiveRoot) {
-					
-					# Set the archive location from root
-					$archiveLocationFromRoot = $this->archiveRoot . $filename . '.rejected-submission';
-					
-					# Create the directory if necessary
-					if (!$this->makeDirectory (dirname ($archiveLocationFromRoot))) {
-						$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the archive.', "The proposed new directory was {$archiveLocationFromRoot} .");
-						return false;
-					}
-					
-					# Move the file
-					$success = rename ($fileOnServer, $archiveLocationFromRoot);
-				} else {
-					$success = @unlink ($fileOnServer);
-				}
-				
-				# Show outcome
-				if (!$success) {
-					$this->reportErrors ('There was a problem ' . ($this->archiveRoot ? 'archiving' : 'deleting') . ' the rejected file.', "The filename was {$fileOnServer} .");
-					return false;
-				}
-				
-				# Reload the submissions database
-				$this->submissions = $this->submissions ($excludeTemplateFiles = true);
-				
-				# Confirm success and relist the submissions if appropriate
-				echo "\n<p class=\"success\">The file {$fileLocation} was deleted successfully.";
-				echo "\n" . '<p><a href="/?review"><strong>Revert to browsing</strong></a>' . ($this->submissions ? ', or continue moderating pages.' : '.') . '</p>';
-				#!# Reloading is failing here sometimes
-				if ($this->submissions) {echo $this->listSubmissions ($reload = false);}
-				echo "\n<hr />";
-				
-				# Log the change
-				$this->logChange ("Submitted file $fileLocation deleted");
-				
-				# Mail the user if required
-				if ($mailUser) {
-					$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, $fileLocation" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on {$fileTimestamp}, has been rejected and thus deleted.";
-					if ($result['message']) {$compiledMessage .= "\n\n{$result['message']}";}
-					$this->sendMail ($file['username'], $compiledMessage, $subjectSuffix = ($this->isBlogMode ? 'blog posting' : 'page') . ' submission rejected');
-				}
-				
+				$this->reject ($filename, $silentMode = false, $mailUser, $result['message'], $thisUserMoreSubmissionsTotal);
 				break;
 				
 			case 'edit':
 				# Redirect the user to the new page; take no other action. The previous version will need to be deleted manually by the administrator
 				application::sendHeader (302, "{$this->editSiteUrl}{$filename}?edit");
 				echo "\n<p><a href=\"{$filename}?edit\">Click here to edit the " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a> (as your browser has not redirected you automatically).</p>";
-				
 				break;
 				
 			case 'message':
 				# Send the message
-				$compiledMessage = 'With regard to the ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . ($file['title'] ? " ({$file['title']})" : ' ') . ", on {$fileTimestamp}:\n\n{$result['message']}";
+				$file = $this->submissions[$filename];
+				$fileLocation = $file['directory'] . $file['filename'];
+				$compiledMessage = 'With regard to the ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . html_entity_decode ($file['title'] ? " ({$file['title']})" : ' ') . ", on " . $this->convertTimestamp ($file['timestamp']) . ":\n\n{$result['message']}";
 				$this->sendMail ($this->submissions[$filename]['username'], $compiledMessage, 'message regarding a ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' you submitted');
 				break;
 		}
 	}
 	
 	
+	# Function to reject a file
+	function reject ($filename, $silentMode = false, $mailUser = false, $extraMessage = false, $moreSubmissionsByThisUser = false)
+	{
+		# Shortcuts
+		$fileOnServer = $this->filestoreRoot . $filename;
+		$fileLocation = $this->submissions[$filename]['directory'] . $this->submissions[$filename]['filename'];
+		
+		# Move (to the archive store) or delete the file, depending on whether there is an archive store
+		if ($this->archiveRoot) {
+			
+			# Set the archive location from root
+			$archiveLocationFromRoot = $this->archiveRoot . $filename . '.rejected-submission';
+			
+			# Create the directory if necessary
+			if (!$this->makeDirectory (dirname ($archiveLocationFromRoot))) {
+				$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the archive.', "The proposed new directory was {$archiveLocationFromRoot} .");
+				return false;
+			}
+			
+			# Move the file
+			$success = rename ($fileOnServer, $archiveLocationFromRoot);
+		} else {
+			$success = @unlink ($fileOnServer);
+		}
+		
+		# Show outcome
+		if (!$success) {
+			$this->reportErrors ('There was a problem ' . ($this->archiveRoot ? 'archiving' : 'deleting') . ' the rejected file.', "The filename was {$fileOnServer} .");
+			return false;
+		}
+		
+		# Log the change
+		$this->logChange ("Submitted file {$fileLocation} deleted");
+		
+		# End if silent mode
+		if ($silentMode) {return true;}
+		
+		# Reload the submissions database, first caching the submitting user
+		$submission = $this->submissions[$filename];
+		$fileLocation = $submission['directory'] . $submission['filename'];
+		$this->submissions = $this->submissions ($excludeTemplateFiles = true);
+		
+		# Confirm success and relist the submissions if appropriate
+		echo "\n<p class=\"success\">The file {$fileLocation} was deleted successfully.</p>";
+		echo "\n" . '<p><a href="/?review"><strong>Revert to browsing</strong></a>' . ($this->submissions ? ', or continue moderating pages.' : '.') . '</p>';
+		#!# Reloading is failing here sometimes
+		if ($this->submissions) {echo $this->listSubmissions ($reload = false);}
+		echo "\n<hr />";
+		
+		# Mail the user if required
+		if ($mailUser) {
+			$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . html_entity_decode ($submission['title'] ? " ('{$submission['title']}')" : ' ') . ', on ' . $this->convertTimestamp ($submission['timestamp']) . ', has been rejected and thus deleted.';
+			if ($moreSubmissionsByThisUser) {$compiledMessage .= "\n\nThe earlier " . ($moreSubmissionsByThisUser == 1 ? 'version of this page that you submitted has' : 'versions of this page that you submitted have') . ' also been discarded.';}
+			if ($extraMessage) {$compiledMessage .= "\n\n{$extraMessage}";}
+			$this->sendMail ($submission['username'], $compiledMessage, $subjectSuffix = ($this->isBlogMode ? 'blog posting' : 'page') . ' submission rejected');
+		}
+	}
+	
+	
 	# Function to approve a file (i.e. make live)
-	function makeLive ($submittedFile, $contents, $directly = false, $mailUser = false, $extraMessage = false)
+	function makeLive ($submittedFile, $contents, $directly = false, $location = false, $mailUser = false, $extraMessage = false, $moreSubmissionsByThisUser = false)
 	{
 		# Construct the file location
-		$newFileLiveLocation = ($directly ? $submittedFile : $this->submissions[$submittedFile]['directory'] . $this->submissions[$submittedFile]['filename']);
+		$newFileLiveLocation = ($directly ? $submittedFile : ($location ? $location . (substr ($location, -1) == '/' ? 'index.html' : '') : $this->submissions[$submittedFile]['directory'] . $this->submissions[$submittedFile]['filename']));
 		$newFileLiveLocationFromRoot = $this->liveSiteRoot . $newFileLiveLocation;
 		
 		# Backup replaced live files if necessary
@@ -3111,7 +3218,8 @@ class pureContentEditor
 		# Mail the user if required
 		if ($mailUser) {
 			$fileTimestamp = $this->convertTimestamp ($this->submissions[$submittedFile]['timestamp']);
-			$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$newFileLiveLocation}" . ($this->submissions[$submittedFile]['title'] ? " ({$this->submissions[$submittedFile]['title']})" : ' ') . ", on {$fileTimestamp}, has been approved and is now online, at:\n\n{$this->liveSiteUrl}{$newFileLiveLocationChopped}";
+			$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$newFileLiveLocation}" . html_entity_decode ($this->submissions[$submittedFile]['title'] ? " ('{$this->submissions[$submittedFile]['title']}')" : ' ') . ", on {$fileTimestamp}, has been approved and is now online, at:\n\n{$this->liveSiteUrl}{$newFileLiveLocationChopped}";
+			if ($moreSubmissionsByThisUser) {$compiledMessage .= "\n\nThe earlier " . ($moreSubmissionsByThisUser == 1 ? 'version of this page that you submitted has' : 'versions of this page that you submitted have') . ' been discarded.';}
 			if ($extraMessage) {$compiledMessage .= "\n\n{$extraMessage}";}
 			$this->sendMail ($this->submissions[$submittedFile]['username'], $compiledMessage, ($this->isBlogMode ? 'blog posting' : 'page') . ' approved');
 		}
@@ -3119,10 +3227,10 @@ class pureContentEditor
 		# Delete the staging file and log the change
 		if (!$directly) {
 			if (!@unlink ($this->filestoreRoot . $submittedFile)) {
-				$this->reportErrors ('There was a problem deleting the originally submitted staging file.', "The filename was {$fileOnServer} .");
+				$this->reportErrors ('There was a problem deleting the originally submitted staging file.', "The filename was {$this->filestoreRoot}{$submittedFile} .");
 				return false;
 			}
-			$this->logChange ("Originally submitted (but now live) file $submittedFile deleted from filestore.");
+			$this->logChange ("Originally submitted (but now live) file {$this->filestoreRoot}{$submittedFile} deleted from filestore.");
 		}
 		
 		# Return the cached result
@@ -3524,6 +3632,7 @@ class pureContentEditor
 #R# Fix known but difficult bug in review (): 'reject' where the actions list links all break because there is no longer a page there
 #R# Implement a better algorithm for typeOfFile ()
 #R# Implement the notion of a currently active permission which is definitive and which can be looked up against
+#!# After renaming on making live, the menu locations need to be changed; note this is going to involve extensive refactoring to involve a single 'echo $html' in the constructor
 # Groups facility
 # <table class="lines"> - has to wait for FCKeditor to support this: see http://dev.fckeditor.net/ticket/825
 # Specialised gui for menu and title files (rather than using 'list pages' or entering the URL directly)
@@ -3538,7 +3647,6 @@ class pureContentEditor
 # Remove preprocessContents () once FCKeditor.BaseHref works correctly
 # Add use of application::getTitleFromFileContents in convertPermission () to get the contents for files
 # Find some way to enable browsing of /foo/bar/[no index.html] where that is a new directory that does not exist on the live site - maybe a mod_rewrite change
-# Renaming on making live
 # More control over naming - moving regexp into the settings but disallow _ at the start
 # Ability to provide an external function which does privilege lookups
 # Ability to add a permission directly when adding a user rather than using two stages (and hence two e-mails)
@@ -3550,7 +3658,6 @@ class pureContentEditor
 # Diffing function - apparently wikimedia includes a good PHP class for this - see http://cvs.sourceforge.net/viewcvs.py/wikipedia/phase3/includes/  - difference engine
 # Cookie, /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
 # Direct update rights
-# Where multiple submissions of same page have a warning that it's not the latest (if not) and have a 'delete earlier submissions' box
 # Link checker
 # Option to ban top-level _directory_ creation as well as files
 # Force .menu.html links to be absolute
@@ -3561,6 +3668,7 @@ class pureContentEditor
 # Messaging facility should state which page the message is being sent on
 # Change all file writes so that writability check is done in setup, removing the need for error reporting
 # † sometimes not being escaped properly
+# /sitetech/ area editing GUI (for admins)
 # Start/end date should be in user not permission side
 # Consider making administrator rights set as a select box rather than a difficultly-titled checkbox
 
