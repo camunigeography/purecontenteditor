@@ -78,7 +78,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.3.0';
+	var $version = '1.3.1';
 	
 	
 	# Constructor
@@ -103,7 +103,7 @@ class pureContentEditor
 		require_once ('csv.php');
 		require_once ('directories.php');
 		require_once ('pureContent.php');
-		require_once ('ultimateForm-dev.php');
+		require_once ('ultimateForm.php');
 		
 		# Assign the user
 		$this->user = $_SERVER['REMOTE_USER'];
@@ -1840,7 +1840,7 @@ class pureContentEditor
 		# Asembe the pieces
 		$currentBlogRoot = $this->getCurrentBlogRoot ();
 		$date = str_replace ('-', '/', $date);
-		$urlSlug = $this->createUrlSlug ($summary);
+		$urlSlug = application::createUrlSlug ($summary);
 		$newFile = $currentBlogRoot . $date . '/' . $urlSlug . '/' . ($addIndex ? 'index.html' : '');
 		
 		# Return the assembled string
@@ -1859,19 +1859,6 @@ class pureContentEditor
 		
 		# Return the root
 		return $currentBlogRoot;
-	}
-	
-	
-	# Function to create a URL slug
-	#!# Solution based on http://www.thinkingphp.org/2006/10/19/title-to-url-slug-conversion/ ; consider instead using something more like Wordpress' sanitize_title, as here: http://trac.wordpress.org/browser/trunk/wp-includes/functions-formatting.php?rev=1481
-	function createUrlSlug ($string)
-	{
-		# Define the conversions
-		$unPretty = array('/ä/', '/ö/', '/ü/', '/Ä/', '/Ö/', '/Ü/', '/ß/', '/\s?-\s?/', '/\s?_\s?/', '/\s?\/\s?/', '/\s?\\\s?/', '/\s/', '/"/', '/\'/', '/!/', '/\./');
-		$pretty   = array('ae', 'oe', 'ue', 'Ae', 'Oe', 'Ue', 'ss', '-', '-', '-', '-', '-', '', '', '', '');
-		
-		# Convert
-		return strtolower (preg_replace ($unPretty, $pretty, $string));
 	}
 	
 	
