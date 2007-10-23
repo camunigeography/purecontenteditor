@@ -72,13 +72,14 @@ class pureContentEditor
 		'newBlogEntryTemplate' => "\n\n\n<h1>%title</h1>\n\n<p>Content starts here</p>",	// Default blog posting file contents
 		'newBlogIndexTemplate' => "<h1>%title</h1>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogIndex ();\n?>",	// Default directory index file contents
 		'newBlogTreeRootTemplate' => "<h1>Blogs</h1>\n\n<p>Welcome to the blogs section!</p>\n<p>The following blogs are available at present:</p>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogList ();\n?>",
+		'lookup'	=> array (),	// Array of areas which people have automatic editing rights rather than being stored by pureContentEditor, as array (username1 => array (Username,Forename,Surname,E-mail,Location and optionally Administrator (as value 1 or 0)), username2...)
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.3.1';
+	var $version = '1.4.0';
 	
 	
 	# Constructor
@@ -291,6 +292,9 @@ class pureContentEditor
 		# Define the user and permissions database locations
 		$this->userDatabase = $this->filestoreRoot . $this->userDatabase;
 		$this->permissionsDatabase = $this->filestoreRoot . $this->permissionsDatabase;
+		
+		# Ensure any lookup is an array
+		$this->lookup = application::ensureArray ($this->lookup);
 		
 		# Ensure the permissions database exists
 		if (!file_exists ($this->permissionsDatabase)) {
@@ -664,8 +668,36 @@ class pureContentEditor
 	# Function to get users
 	function users ()
 	{
-		# Get the data and return it
-		if (!$users = csv::getData ($this->userDatabase)) {
+		# Get the CSV (local) users
+		$csvUsers = csv::getData ($this->userDatabase);
+		
+		# Get the lookup data
+		$lookupUsers = array ();
+		if ($this->lookup) {
+			
+			# Label the CSV users
+			#!# Should show when lookup is !== false rather than when no lookup users found
+			if ($csvUsers) {
+				foreach ($csvUsers as $username => $attributes) {
+					$csvUsers[$username]['Source'] = 'Local (CSV)';
+				}
+			}
+			
+			# Organise the lookup users
+			$fields = array ('Forename', 'Surname', 'E-mail', 'Administrator');
+			foreach ($this->lookup as $username => $attributes) {
+				foreach ($fields as $field) {
+					$lookupUsers[$username][$field] = (isSet ($attributes[$field]) ? trim ($attributes[$field]) : '');
+				}
+				$lookupUsers[$username]['Source'] = 'Lookup (database)';
+			}
+		}
+		
+		# Merge the users, with the CSV (local) users taking precedence
+		$users = array_merge ($lookupUsers, $csvUsers);
+		
+		# End if there are no users and force addition
+		if (!$users) {
 			$this->userAdd ($firstRun = true);
 			return false;
 		}
@@ -676,6 +708,49 @@ class pureContentEditor
 		
 		# Return the users
 		return $users;
+	}
+	
+	
+	# Function to get users
+	function permissions ()
+	{
+		# Get the data and return it
+		$csvPermissions = csv::getData ($this->permissionsDatabase);
+		
+		# Get the lookup data
+		$lookupPermissions = array ();
+		if ($this->lookup) {
+			
+			# Label the CSV permissions
+			#!# Should show when lookup is !== false rather than when no lookup permissions found
+			if ($csvPermissions) {
+				foreach ($csvPermissions as $username => $attributes) {
+					$csvPermissions[$username]['Source'] = 'Local (CSV)';
+				}
+			}
+			
+			# Organise the lookup permissions
+			$fields = array ('Username', 'Location', 'Startdate', 'Enddate');
+			#!# Currently assumes one permission per user; change this in a later release by allowing an array of permissions per user
+			foreach ($this->lookup as $username => $attributes) {
+				$permission = array ();
+				foreach ($fields as $field) {
+					$permission[$field] = (isSet ($attributes[$field]) ? trim ($attributes[$field]) : '');
+				}
+				$key = trim ($username) . ':' . trim ($permission['Location']);
+				$lookupPermissions[$key] = $permission;
+				$lookupPermissions[$key]['Source'] = 'Lookup (database)';
+			}
+		}
+		
+		# Merge the permissions, with the CSV (local) users taking precedence
+		$permissions = array_merge ($lookupPermissions, $csvPermissions);
+		
+		# Sort the permissions, maintaining key to data correlations; this will ensure that overriding rights are listed (and will thus be matched) first (i.e. tree>directory>page)
+		ksort ($permissions);
+		
+		# Return the permissions
+		return $permissions;
 	}
 	
 	
@@ -698,20 +773,6 @@ class pureContentEditor
 		
 		# Return the administrators
 		return $administrators;
-	}
-	
-	
-	# Function to get users
-	function permissions ()
-	{
-		# Get the data and return it
-		$permissions = csv::getData ($this->permissionsDatabase);
-		
-		# Sort the permissions, maintaining key to data correlations; this will ensure that overriding rights are listed (and will thus be matched) first (i.e. tree>directory>page)
-		ksort ($permissions);
-		
-		# Return the permissions
-		return $permissions;
 	}
 	
 	
@@ -1106,8 +1167,8 @@ class pureContentEditor
 		}
 		
 		# Compile the task box HTML
-		$html  = "\n\n<div id=\"administration\">";
-		$html .= "\n\t<p><em>pureContentEditor</em> actions available here for <strong>{$this->user}</strong>:</p>";
+		$html  = "\n\n<div id=\"administration\" class=\"graybox\">";
+		$html .= "\n\t<p><em>pureContentEditor</em> actions available here for <strong>{$this->user}" . ($this->userIsAdministrator ? ' (ADMIN)' : '') . '</strong>:</p>';
 		$html .= "\n\t<ul>";
 		foreach ($menu as $group => $actions) {
 			$html .= "\n\t\t<li>{$group}:";
@@ -1951,16 +2012,19 @@ class pureContentEditor
 		# Force a reload of the list if necessary
 		if ($forceReload) {$this->users = $this->users ();}
 		
+		# Sort the users by username
+		$users = $this->users;
+		ksort ($users);
+		
 		# Change the administrator indication
 		$usersFormatted = array ();
-		foreach ($this->users as $user => $attributes) {
-			$user = "<a href=\"?userAmend=$user\">$user</a>";
+		foreach ($users as $user => $attributes) {
+			if (!isSet ($attributes['Source']) || (isSet ($attributes['Source']) && ($attributes['Source'] != 'Lookup (database)'))) {
+				$user = "<a href=\"?userAmend=$user\">$user</a>";
+			}
 			$usersFormatted[$user] = $attributes;
 			$usersFormatted[$user]['Administrator'] = ($attributes['Administrator'] ? 'Yes' : 'No');
 		}
-		
-		# Sort the users by username
-		ksort ($usersFormatted);
 		
 		# Show the table of current users
 		echo "\n<p class=\"information\">The following are currently registered as users of the editing system. To edit a user's details, click on their username.</p>";
@@ -2047,7 +2111,7 @@ class pureContentEditor
 		
 		# Signal success, firstly reloading the database
 		$this->users = $this->users ();
-		echo "\n<p class=\"success\">The user {$result['Forename']} {$result['Surname']} ({$result['Username']}) was successfully added" . ($result['Administrator'] ? ', as an administrator.' : ". You may now wish to <a href=\"{$this->page}?permissionGrant={$result['Username']}\">add permissions</a> for that user.") . '</p>';
+		echo "\n<p class=\"success\">The user {$result['Forename']} {$result['Surname']} ({$result['Username']}) was successfully added" . ($result['Administrator'] ? ', as an administrator.' : ".<br />You may now wish to <a href=\"{$this->page}?permissionGrant={$result['Username']}\"><strong>add permissions for that user</strong></a>.") . '</p>';
 		$message  = "You now have access to the website editing facility. You can log into the pureContentEditor system at {$this->editSiteUrl}/ , using your Raven username and password. You are recommended to bookmark that address in your web browser.";
 		$message .= "\n\nYour username is: {$result['Username']}";
 		$message .= "\n\n" . ($result['Administrator'] ? 'You have been granted administrative rights, so you have editable access across the site rather than access to particular areas. You can also create/administer users and permissions.' : 'You will be separately advised of the area(s) of the site which you have permission to alter.');
@@ -2065,6 +2129,12 @@ class pureContentEditor
 		# If a user has been selected but does not exist, say so
 		if ($username && !isSet ($this->users[$username])) {
 			echo "\n<p class=\"failure\">There is no user {$this->attribute}.</p>";
+		}
+		
+		# Ensure the user is a local user, as looked-up users cannot be edited
+		if (isSet ($this->users[$username]['Source']) && $this->users[$username]['Source'] == 'Lookup (database)') {
+			echo "\n<p class=\"failure\">This user's details cannot be edited as their information comes from an external database lookup.</p>";
+			return false;
 		}
 		
 		# Show the list of users with the links if no user has been selected
@@ -2161,7 +2231,7 @@ class pureContentEditor
 		$this->usersWithUnapprovedSubmissions = $this->usersWithUnapprovedSubmissions ();
 		
 		# Get the list of users
-		$deletableUsers = $this->userSelectionList ($excludeUsersWithUnapprovedSubmissions = true, $excludeCurrentUser = true);
+		$deletableUsers = $this->userSelectionList ($excludeUsersWithUnapprovedSubmissions = true, $excludeCurrentUser = true, false, $excludeLookupUsers = true);
 		
 		# Prevent the form display if there are no users
 		if (!$deletableUsers) {
@@ -2208,7 +2278,7 @@ class pureContentEditor
 		if (!$result = $form->process ()) {return;}
 		
 		# Check that there is such a user
-		if (!array_key_exists ($result['username'], $this->users)) {
+		if (!array_key_exists ($result['username'], $deletableUsers)) {
 			echo "\n<p class=\"failure\">There is no such user to delete. (Perhaps you have just deleted the user and then refreshed this page accidentally?)</p>";
 			return false;
 		}
@@ -2217,7 +2287,9 @@ class pureContentEditor
 		$permissions = array ();
 		foreach ($this->permissions as $key => $attributes) {
 			if ($attributes['Username'] == $result['username']) {
-				$permissions[] = $key;
+				if (!isSet ($attributes['Source']) || (isSet ($attributes['Source']) && ($attributes['Source'] != 'Lookup (database)'))) {
+					$permissions[] = $key;
+				}
 			}
 		}
 		
@@ -2263,7 +2335,7 @@ class pureContentEditor
 	
 	
 	# Function to create a userlist
-	function userSelectionList ($excludeUsersWithUnapprovedSubmissions = false, $excludeCurrentUser = false, $excludeAdministrators = false)
+	function userSelectionList ($excludeUsersWithUnapprovedSubmissions = false, $excludeCurrentUser = false, $excludeAdministrators = false, $excludeLookupUsers = false)
 	{
 		# Compile the user list, excluding users with unapproved submissions and/or administrators if necessary
 		$users = array ();
@@ -2277,6 +2349,9 @@ class pureContentEditor
 			
 			# Skip the current user if necessary
 			if ($excludeCurrentUser && ($user == $this->user)) {continue;}
+			
+			# Skip looked-up users if necessary
+			if ($excludeLookupUsers && isSet ($attributes['Source']) && ($attributes['Source'] == 'Lookup (database)')) {continue;}
 			
 			# Add the user to the list
 			$users[$user] = "$user: {$attributes['Forename']} {$attributes['Surname']}" . ($attributes['Administrator'] ? ' (Administrator)' : '');
@@ -2316,12 +2391,13 @@ class pureContentEditor
 	
 	
 	# Function to create a list of permissions available
-	function scopeSelectionList ()
+	function scopeSelectionList ($excludeLookupUsers = false)
 	{
 		# Compile the permissions list
 		$permissions = array ();
 		if ($this->permissions) {
 			foreach ($this->permissions as $key => $attributes) {
+				if ($excludeLookupUsers && isSet ($attributes['Source']) && ($attributes['Source'] == 'Lookup (database)')) {continue;}
 				$userAttributes = $this->users[$attributes['Username']];
 				$permissions[$key] = "{$attributes['Username']} ({$userAttributes['Forename']} {$userAttributes['Surname']}): " . $attributes['Location'];
 			}
@@ -2332,7 +2408,7 @@ class pureContentEditor
 	}
 	
 	
-	# Function to list the users
+	# Function to list the permissions
 	function permissionList ()
 	{
 		# If there are no permissions assigned, say so
@@ -2340,6 +2416,9 @@ class pureContentEditor
 			echo "\n<p class=\"information\">There are no permissions assigned (other than universal permissions available to administrators). You may wish to <a href=\"{$this->page}?permissionGrant\">grant some permissions</a>.</p>";
 			return;
 		}
+		
+		# Get the permissions
+		$permissions = $this->permissions;
 		
 		# Start a table of data; NB This way is better in this instance than using htmlTable (), as the data contains HTML which will have htmlentities () applied;
 		$html  = "\n<p class=\"information\">The following permissions are currently assigned:</p>";
@@ -2353,21 +2432,27 @@ class pureContentEditor
 /*
 		$html .= "\n\t\t" . '<th>Can make pages live directly?</th>';
 */
+		#!# Clumsy; refactor this whole section to organise the data first then just application::htmlTable() it
+		foreach ($permissions as $permission => $attributes) {
+			if (isSet ($attributes['Source'])) {$html .= "\n\t\t" . '<th>Source</th>';}
+			break;
+		}
 		$html .= "\n\t" . '</tr>';
 		
 		# Loop through each file to create the table
-		foreach ($this->permissions as $permission => $attributes) {
+		foreach ($permissions as $permission => $attributes) {
 			
 			# Create a table row
 			$html .= "\n\t" . '<tr>';
 			#!# This line is only added because dateLimitation is the only amendable item currently
-			if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<td>' . "<a href=\"?permissionAmend=$permission\">" . ($this->action == 'permissionAmend' ? '<strong>[Amend]</strong>' : '[Amend]') . '</a>' . '</td>';}
+			if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<td>' . (!isSet ($attributes['Source']) || (isSet ($attributes['Source']) && ($attributes['Source'] != 'Lookup (database)')) ? "<a href=\"?permissionAmend=$permission\">" . ($this->action == 'permissionAmend' ? '<strong>[Amend]</strong>' : '[Amend]') . '</a>' : '') . '</td>';}
 			$html .= "\n\t\t" . '<td>' . $this->convertUsername ($attributes['Username']) . '</td>';
 			$html .= "\n\t\t" . '<td>' . $this->convertPermission ($attributes['Location'], $descriptions = false) . '</td>';
 			if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<td>' . $this->formatDateLimitation ($attributes['Startdate'], $attributes['Enddate']) . '</td>';}
 /*
 			$html .= "\n\t\t" . '<td>' . ($attributes['Self-approval'] ? 'Yes' : 'No') . '</td>';
 */
+			if (isSet ($attributes['Source'])) {$html .= "\n\t\t" . '<td>' . $attributes['Source'] . '</td>';}
 			$html .= "\n\t" . '</tr>';
 		}
 		$html .= "\n" . '</table>';
@@ -2551,6 +2636,12 @@ class pureContentEditor
 		# If a user has been selected but does not exist, say so
 		if ($permission && !isSet ($this->permissions[$permission])) {
 			echo "\n<p class=\"failure\">There is no permission {$this->attribute}.</p>";
+		}
+		
+		# Ensure the user is a local user, as looked-up users cannot be edited
+		if (isSet ($this->permissions[$permission]['Source']) && $this->permissions[$permission]['Source'] == 'Lookup (database)') {
+			echo "\n<p class=\"failure\">This permission cannot be edited as its details come from an external database lookup.</p>";
+			return false;
 		}
 		
 		# Show the list of users with the links if no user has been selected
@@ -2845,8 +2936,8 @@ class pureContentEditor
 	# Function to remove a permission
 	function permissionRevoke ()
 	{
-		# Get the users from the CSV file
-		$permissions = $this->scopeSelectionList ();
+		# Get the permissions from the CSV file
+		$permissions = $this->scopeSelectionList ($excludeLookupUsers = true);
 		
 		# If there are no permissions assigned, say so
 		if (!$permissions) {
@@ -3635,7 +3726,6 @@ class pureContentEditor
 # Add use of application::getTitleFromFileContents in convertPermission () to get the contents for files
 # Find some way to enable browsing of /foo/bar/[no index.html] where that is a new directory that does not exist on the live site - maybe a mod_rewrite change
 # More control over naming - moving regexp into the settings but disallow _ at the start
-# Ability to provide an external function which does privilege lookups
 # Ability to add a permission directly when adding a user rather than using two stages (and hence two e-mails)
 # BUG: _fckeditor being appended to images/links in some cases
 # Moderation should cc: other administrators (not yourself though) when a page is approved
