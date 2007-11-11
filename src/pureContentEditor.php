@@ -79,7 +79,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.4.0';
+	var $version = '1.5.0';
 	
 	
 	# Constructor
@@ -120,6 +120,10 @@ class pureContentEditor
 		
 		# Get the current directory for this page
 		$this->currentDirectory = $this->currentDirectory ();
+		
+		# State the expected fields from the user and permission databases
+		$this->userDatabaseHeaders = array ('Username' , 'Forename' , 'Surname' , 'E-mail' , 'Administrator');
+		$this->permissionsDatabaseFields = array ('Key', 'Username', 'Location', 'Self-approval', 'Startdate', 'Enddate', );
 		
 		# Get the users (which will force creation if there are none)
 		if (!$this->administrators = $this->administrators ()) {return false;}
@@ -298,16 +302,14 @@ class pureContentEditor
 		
 		# Ensure the permissions database exists
 		if (!file_exists ($this->permissionsDatabase)) {
-			$permissionsDatabaseHeaders = array ('Key' , 'Username' , 'Location', 'Startdate', 'Enddate', /*'Selfapproval', */);
-			if (!csv::createNew ($this->permissionsDatabase, $permissionsDatabaseHeaders)) {
+			if (!csv::createNew ($this->permissionsDatabase, $this->permissionsDatabaseFields)) {
 				$setupErrors[] = 'There was a problem creating the permissions database.';
 			}
 		}
 		
 		# Ensure the user database exists
 		if (!file_exists ($this->userDatabase)) {
-			$userDatabaseHeaders = array ('Username' , 'Forename' , 'Surname' , 'E-mail' , 'Administrator');
-			if (!csv::createNew ($this->userDatabase, $userDatabaseHeaders)) {
+			if (!csv::createNew ($this->userDatabase, $this->userDatabaseHeaders)) {
 				$setupErrors[] = 'There was a problem creating the user database.';
 			}
 		}
@@ -711,7 +713,7 @@ class pureContentEditor
 	}
 	
 	
-	# Function to get users
+	# Function to get permissions
 	function permissions ()
 	{
 		# Get the data and return it
@@ -730,11 +732,10 @@ class pureContentEditor
 			}
 			
 			# Organise the lookup permissions
-			$fields = array ('Username', 'Location', 'Startdate', 'Enddate');
 			#!# Currently assumes one permission per user; change this in a later release by allowing an array of permissions per user
 			foreach ($this->lookup as $username => $attributes) {
 				$permission = array ();
-				foreach ($fields as $field) {
+				foreach ($this->permissionsDatabaseFields as $field) {
 					$permission[$field] = (isSet ($attributes[$field]) ? trim ($attributes[$field]) : '');
 				}
 				$key = trim ($username) . ':' . trim ($permission['Location']);
@@ -777,10 +778,13 @@ class pureContentEditor
 	
 	
 	# Function to determine whether the user is an administrator
-	function userIsAdministrator ()
+	function userIsAdministrator ($particularUser = false)
 	{
+		# Determine the user to check, defaulting to the administrator
+		$userToCheck = ($particularUser ? $particularUser : $this->user);
+		
 		# Return the result from the array
-		return $this->users[$this->user]['Administrator'];
+		return (isSet ($this->users[$userToCheck]['Administrator']) ? $this->users[$userToCheck]['Administrator'] : false);
 	}
 	
 	
@@ -818,6 +822,9 @@ class pureContentEditor
 	# Function to determine the user's rights overall
 	function determineRights ()
 	{
+		# Determine if the user can make files live directory (further changes below)
+		$this->userCanMakeFilesLiveDirectly = ($this->userIsAdministrator ? true : false);
+		
 		# Return false if the page is banned
 		if ($this->changesBannedHere) {return false;}
 		
@@ -830,19 +837,27 @@ class pureContentEditor
 			$locations[] = $this->permissions[$permission]['Location'];
 		}
 		
-		# Otherwise return the user's rights in detail
-		return $this->matchLocation ($locations, $this->page);
+		# Get the user's rights in detail
+		$rights = $this->matchLocation ($locations, $this->page, $determineLocationInUse = true);
+		
+		# Determine the exact permission in use
+		$permission = ($this->locationInUse ? "{$this->user}:{$this->locationInUse}" : false);
+		$this->userCanMakeFilesLiveDirectly = ($this->userIsAdministrator ? true : (($permission && isSet ($this->permissions[$permission])) ? $this->permissions[$permission]['Self-approval'] : false));
+		
+		# Return the user's rights
+		return $rights;
 	}
 	
 	
 	# Function to perform a location match; returns either a string (equating to true) or false
-	function matchLocation ($locations, $test)
+	function matchLocation ($locations, $test, $determineLocationInUse = false)
 	{
 		# Loop through each location (which are ordered such that overriding rights are listed (and will thus be matched) first (i.e. tree>directory>page)
 		foreach ($locations as $location) {
 			
 			# Check for an exact match
 			if ($location == $test) {
+				if ($determineLocationInUse) {$this->locationInUse = $location;}
 				return 'page';	// i.e. true
 			}
 			
@@ -850,6 +865,7 @@ class pureContentEditor
 			if (substr ($location, -1) == '/') {
 				$page = ereg_replace ('^' . $location, '', $test);
 				if (strpos ($page, '/') === false) {
+					if ($determineLocationInUse) {$this->locationInUse = $location;}
 					return 'directory';	// i.e. true
 				}
 			}
@@ -858,11 +874,15 @@ class pureContentEditor
 			if (substr ($location, -1) == '*') {
 				if (ereg ('^' . $location, $test)) {
 					if ($location != ereg_replace ('^' . $location, '', $test)) {
+						if ($determineLocationInUse) {$this->locationInUse = $location;}
 						return 'tree';	// i.e. true
 					}
 				}
 			}
 		}
+		
+		# If necessary, set the default for the location in use
+		if ($determineLocationInUse) {$this->locationInUse = false;}
 		
 		# Else return false
 		return false;
@@ -1317,10 +1337,6 @@ class pureContentEditor
 		# Start the HTML, enclosing it in a div for CSS styling purposes, echoing it directly because of the form
 		echo "\n\n<div id=\"editor\">";
 		
-		# Determine whether the user can make files live directly
-		#!# Add more options based on the permissions database
-		$userCanMakeFilesLiveDirectly = $this->userIsAdministrator;
-		
 		# Create the form itself
 		$form = new form (array (
 			'developmentEnvironment' => $this->developmentEnvironment,
@@ -1328,7 +1344,7 @@ class pureContentEditor
 			'displayTitles' => ($this->typeOfFile == 'titleFile'),
 			'displayDescriptions' => ($this->typeOfFile == 'titleFile'),
 			'displayColons' => true,
-			'submitButtonText' => 'Submit page for approval' . ($userCanMakeFilesLiveDirectly ? ' / Make live' : ''),
+			'submitButtonText' => 'Submit page for approval' . ($this->userCanMakeFilesLiveDirectly ? ' / Make live' : ''),
 			'formCompleteText' => false,
 			'nullText' => 'Select which administrator to inform of this submission:',
 		));
@@ -1424,14 +1440,14 @@ class pureContentEditor
 		# Select the administrator to e-mail
 		$form->select (array (
 		    'name'            => 'administrators',
-		    'values'            => $this->administratorSelectionList ($enableNoneOption = $userCanMakeFilesLiveDirectly),
+		    'values'            => $this->administratorSelectionList ($enableNoneOption = $this->userCanMakeFilesLiveDirectly),
 		    'title'                    => 'Administrator to inform',
 		    'required'        => 1,
-			'default' => ($userCanMakeFilesLiveDirectly ? '_none' : '_all'),
+			'default' => ($this->userCanMakeFilesLiveDirectly ? '_none' : '_all'),
 		));
 		
 		# Allow administrators to make live directly
-		if ($userCanMakeFilesLiveDirectly) {
+		if ($this->userCanMakeFilesLiveDirectly) {
 			$makeLiveDirectlyText = 'Make live directly (do not add to approval list)';
 			$form->checkboxes (array (
 			    'name'			=> 'preapprove',
@@ -1451,7 +1467,7 @@ class pureContentEditor
 		$content = preg_replace ("|^{$this->templateMark}|DsiU", '', $content);
 		
 		# Determine whether to approve directly
-		$approveDirectly = ($userCanMakeFilesLiveDirectly ? $result['preapprove'][$makeLiveDirectlyText] : false);
+		$approveDirectly = ($this->userCanMakeFilesLiveDirectly ? $result['preapprove'][$makeLiveDirectlyText] : false);
 		
 		# Save the file to the filestore or the live site as appropriate
 		if ($approveDirectly) {
@@ -1960,52 +1976,6 @@ class pureContentEditor
 	}
 	
 	
-	/*
-	# Function to adjust the (already-cleaned) HTML
-	function editAdjustHtml ($content)
-	{
-		# Define the replacements as an associative array
-		$replacements = array (
-			"<(li|tr|/tr|tbody|/tbody)"	=> "\t<\\1",	// Indent level-two tags
-			"<(td|/td)"	=> "\t\t<\\1",	// Indent level-three tags
-		);
-		
-		# Obfuscate e-mail addresses
-		if ($this->protectEmailAddresses) {
-			$replacements += array (
-				'<a href="mailto:([^@]*)@([^"]*)">([^@]*)@([^<]*)</a>' => '\3<span>&#64;</span>\4',	// Replace e-mail addresses with anti-spambot equivalents
-				'<span>@</span>' => '<span>&#64;</span>',	// Replace e-mail addresses with anti-spambot equivalents
-				' href="([^"]*)/' . $this->directoryIndex . '"'	=> ' href="\1/"',	// Chop off directory index links
-			);
-		}
-		
-		# Ensure links to pages outside the page are in a new window
-		if ($this->externalLinksTarget) {
-			$replacements += array (
-				'<a target="([^"]*)" href="([^"]*)"([^>]*)>' => '<a href="\2" target="\1"\3>',	// Move existing target to the end
-				'<a href="(http:|https:)//([^"]*)"([^>]*)>' => '<a href="\1//\2" target="' . $this->externalLinksTarget . '"\3>',	// Add external links
-				'<a href="([^"]*)" target="([^"]*)" target="([^"]*)"([^>]*)>' => '<a href="\1" target="\2"\4>',	// Remove any duplication
-			);
-		}
-		
-		# Replacement of image alignment with a similarly-named class
-		if ($this->imageAlignmentByClass) {
-			$replacements += array (
-				'<img([^>]*) align="(left|center|centre|right)"([^>]*)>' => '<img\1 class="\2"\3>',
-			);
-		}
-		
-		# Perform the replacements
-		foreach ($replacements as $find => $replace) {
-			$content = eregi_replace ($find, $replace, $content);
-		}
-		
-		# Return the adjusted content
-		return $content;
-	}
-	*/
-	
-	
 	# Function to list the users
 	function userList ($forceReload = false)
 	{
@@ -2428,10 +2398,9 @@ class pureContentEditor
 		if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<th>Amend?</th>';}
 		$html .= "\n\t\t" . '<th>User:</th>';
 		$html .= "\n\t\t" . '<th>Can make changes to:</th>';
-		if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<th>Date limitation?</th>';}
-/*
 		$html .= "\n\t\t" . '<th>Can make pages live directly?</th>';
-*/
+		if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<th>Date limitation?</th>';}
+		
 		#!# Clumsy; refactor this whole section to organise the data first then just application::htmlTable() it
 		foreach ($permissions as $permission => $attributes) {
 			if (isSet ($attributes['Source'])) {$html .= "\n\t\t" . '<th>Source</th>';}
@@ -2448,10 +2417,8 @@ class pureContentEditor
 			if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<td>' . (!isSet ($attributes['Source']) || (isSet ($attributes['Source']) && ($attributes['Source'] != 'Lookup (database)')) ? "<a href=\"?permissionAmend=$permission\">" . ($this->action == 'permissionAmend' ? '<strong>[Amend]</strong>' : '[Amend]') . '</a>' : '') . '</td>';}
 			$html .= "\n\t\t" . '<td>' . $this->convertUsername ($attributes['Username']) . '</td>';
 			$html .= "\n\t\t" . '<td>' . $this->convertPermission ($attributes['Location'], $descriptions = false) . '</td>';
+			$html .= "\n\t\t" . '<td>' . ($this->userIsAdministrator ($attributes['Username']) ? 'Yes (administrator)' : ($attributes['Self-approval'] ? 'Yes': 'No')) . '</td>';
 			if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<td>' . $this->formatDateLimitation ($attributes['Startdate'], $attributes['Enddate']) . '</td>';}
-/*
-			$html .= "\n\t\t" . '<td>' . ($attributes['Self-approval'] ? 'Yes' : 'No') . '</td>';
-*/
 			if (isSet ($attributes['Source'])) {$html .= "\n\t\t" . '<td>' . $attributes['Source'] . '</td>';}
 			$html .= "\n\t" . '</tr>';
 		}
@@ -2484,7 +2451,7 @@ class pureContentEditor
 		
 		# If a user is selected, but that user does not exist, say so with a non-fatal warning
 		if ($user && !isSet ($users[$user])) {
-			echo "\n<p class=\"failure\">There is no user {$user}. Please select a valid user from the list below.</p>";
+			echo "\n<p class=\"failure\">There is no non-administrator user {$user}. Please select a valid user from the list below.</p>";
 		}
 		
 		# Determine the scopes, the last being the default
@@ -2526,13 +2493,12 @@ class pureContentEditor
 		    'required'        => 1,
 		    'default'        => $defaultScope,
 		));
-/*
+		$selfApprovalText = 'User can make pages live directly';
 		$form->checkboxes (array (
-		    'name'            => 'Self-approval',
-		    'values'            => array ($selfapprovalText = 'User can make pages live directly'),
-		    'title'                    => 'Allow user to make pages live directly',
+		    'name'		=> 'Self-approval',
+		    'values'	=> array ($selfApprovalText ,),
+		    'title'		=> 'Allow user to make pages live directly',
 		));
-*/
 		if (!$this->disableDateLimitation) {
 			$form->datetime (array (
 			    'name'            => 'Startdate',
@@ -2570,17 +2536,14 @@ class pureContentEditor
 			'Location' => $result['scope'],
 			'Startdate' => ($this->disableDateLimitation ? '' : $result['Startdate']),
 			'Enddate' => ($this->disableDateLimitation ? '' : $result['Enddate']),
-/*
-			'Self-approval' => $result['Self-approval'][$selfapprovalText],
-*/
-			'Self-approval' => 0,
+			'Self-approval' => $result['Self-approval'][$selfApprovalText],
 		);
 		
 		# Insert the data into the CSV file
 		if (!csv::addItem ($this->permissionsDatabase, $newPermission, $this->databaseTimestampingMode)) {return false;}
 		
 		# Log the change
-		$this->logChange ("Granted user {$result['username']} permission to edit {$result['scope']} " . ($this->disableDateLimitation ? '' : ($result['Startdate'] ? "from {$result['Startdate']} to {$result['Enddate']}" : 'no time limitation'))/* . ($result['Startdate'] && $result['Self-approval'][$selfapprovalText] ? ' with ' : '') . ($result['Self-approval'][$selfapprovalText] ? 'self-approval allowed' : 'self-approval not allowed')*/);
+		$this->logChange ("Granted user {$result['username']} permission to edit {$result['scope']} " . ($this->disableDateLimitation ? '' : ($result['Startdate'] ? "from {$result['Startdate']} to {$result['Enddate']}" : 'no time limitation')) . ($result['Startdate'] && $result['Self-approval'][$selfApprovalText] ? ' with ' : '') . ($result['Self-approval'][$selfApprovalText] ? 'self-approval allowed' : 'self-approval not allowed'));
 		
 		# Construct a time limitation notice
 		$timeLimitationMessage = ($this->disableDateLimitation ? '' : ($result['Startdate'] ? "\n\nYou can make changes between: " . $this->convertTimestamp ($result['Startdate'], $includeTime = false) . ' and ' . $this->convertTimestamp ($result['Enddate'], $includeTime = false) . '.' : ''));
@@ -2627,15 +2590,22 @@ class pureContentEditor
 	}
 	
 	
-	# Function to amend a user's details
+	# Function to amend an existing permission
 	function permissionAmend ()
 	{
-		# Get the username (if supplied)
+		# Get the permission (if supplied)
 		$permission = $this->attribute;
 		
-		# If a user has been selected but does not exist, say so
+		# If a permission has been selected but does not exist, say so
 		if ($permission && !isSet ($this->permissions[$permission])) {
-			echo "\n<p class=\"failure\">There is no permission {$this->attribute}.</p>";
+			echo "\n<p class=\"failure\">There is no permission " . htmlentities (urldecode ($permission)) . '.</p>';
+			return false;
+		}
+		
+		# If the user is an administrator already, deny editability
+		if ($permission && $this->userIsAdministrator ($this->permissions[$permission]['Username'])) {
+			echo "\n<p class=\"failure\">The user concerned is already an administrator so this existing (and anomalous) permission can only be <a href=\"{$this->page}?permissionRevoke={$permission}\">revoked</a>.</p>";
+			return false;
 		}
 		
 		# Ensure the user is a local user, as looked-up users cannot be edited
@@ -2644,7 +2614,7 @@ class pureContentEditor
 			return false;
 		}
 		
-		# Show the list of users with the links if no user has been selected
+		# Show the list of users with the links if no permission has been selected
 		if (!$permission || !isSet ($this->permissions[$permission])) {
 			$this->permissionList ();
 			return false;
@@ -2671,15 +2641,13 @@ class pureContentEditor
 			'required'	=> true,
 			'editable'	=> false,
 		));
-/*
-		$selfapprovalText = 'User can make pages live directly';
+		$selfApprovalText = 'User can make pages live directly';
 		$form->checkboxes (array (
 		    'name'            => 'Self-approval',
-		    'values'            => array ($selfapprovalText, ),
+		    'values'            => array ($selfApprovalText, ),
 		    'title'                    => 'Allow user to make pages live directly',
-			'default'            => ($this->permissions[$permission]['Self-approval'] ? $selfapprovalText : ''),
+			'default'            => ($this->permissions[$permission]['Self-approval'] ? $selfApprovalText : ''),
 		));
-*/
 		if (!$this->disableDateLimitation) {
 			$form->datetime (array (
 			    'name'            => 'Startdate',
@@ -2706,32 +2674,32 @@ class pureContentEditor
 			'Key' => $permission,
 			'Username' => $result['Username'],
 			'Location' => $result['Location'],
+			'Self-approval' => $result['Self-approval'][$selfApprovalText],
 			'Startdate' => ($this->disableDateLimitation ? '' : $result['Startdate']),
 			'Enddate' => ($this->disableDateLimitation ? '' : $result['Enddate']),
-/*
-			'Self-approval' => $result['Self-approval'][$selfapprovalText],
-*/
-			'Self-approval' => 0,
 		);
 		
 		# Replace the data in the CSV file (add performs replacement when the key already exists)
 		if (!csv::addItem ($this->permissionsDatabase, $amendedPermission, $this->databaseTimestampingMode)) {return false;}
 		
-		# Flag changes of administrative status, reloading the database at this point
-		$this->permissions[$permission]['Key'] = $permission;
-		$this->permissions[$permission]['Self-approval'] = 0;
-		if (($this->permissions[$permission] == $amendedPermission[$permission])) {
+		# Cache the original permission then reload the database
+		$originalPermission = $this->permissions[$permission];
+		$this->permissions = $this->permissions ();
+		$amendedPermission = $this->permissions[$permission];
+		
+		# Flag changes of administrative status
+		if (($originalPermission === $amendedPermission)) {
 			echo "\n<p class=\"information\">No changes have been made to the permission for the user <em>{$result['Username']}</em> to edit <em>{$result['Location']}</em>, so no action was taken.</p>";
 		} else {
 			
 			# Determine what has changed
-			if ($dateHasChanged = ($this->permissions[$permission]['Startdate'] . $this->permissions[$permission]['Enddate'] != $amendedPermission[$permission]['Startdate'] . $amendedPermission[$permission]['Enddate'])) {
-				$dateNowEmpty = ($amendedPermission[$permission]['Startdate'] . $amendedPermission[$permission]['Enddate'] == '');
+			if ($dateHasChanged = ($originalPermission['Startdate'] . $originalPermission['Enddate'] != $amendedPermission['Startdate'] . $amendedPermission['Enddate'])) {
+				$dateNowEmpty = ($amendedPermission['Startdate'] . $amendedPermission['Enddate'] == '');
 			}
-			$selfApprovalHasChanged = ($this->permissions[$permission]['Self-approval'] != $amendedPermission[$permission]['Self-approval']);
+			$selfApprovalHasChanged = ($originalPermission['Self-approval'] != $amendedPermission['Self-approval']);
 			
 			# Log the change
-			$this->logChange ("Amended permission details for {$permission} " . ($dateHasChanged ? (!$dateNowEmpty ? "now time-limited from {$result['Startdate']} to {$result['Enddate']}" : 'now no time limitation') : '') . ($dateHasChanged && $selfApprovalHasChanged ? ' and ' : '') . ($selfApprovalHasChanged ? ($amendedPermission[$permission]['Self-approval'] ? 'self-approval now allowed' : 'self-approval no longer allowed') : ''));
+			$this->logChange ("Amended permission details for {$permission} " . ($dateHasChanged ? (!$dateNowEmpty ? "now time-limited from {$result['Startdate']} to {$result['Enddate']}" : 'now no time limitation') : '') . ($dateHasChanged && $selfApprovalHasChanged ? ' and ' : '') . ($selfApprovalHasChanged ? ($amendedPermission['Self-approval'] ? 'self-approval now allowed' : 'self-approval no longer allowed') : ''));
 			
 			# Show an on-screen message
 			echo "\n<p class=\"success\">Changes have been made to the permission for {$result['Username']} to change {$result['Location']}.</p>";
@@ -2740,7 +2708,7 @@ class pureContentEditor
 			$message =
 				"Your permission to change {$result['Location']} has been amended and is now as follows:"
 				. ($this->disableDateLimitation ? '' : ($dateHasChanged ? "\n\n- " . (!$dateNowEmpty ? "You can now make changes from: " . $this->convertTimestamp ($result['Startdate'], $includeTime = false) . ' until ' . $this->convertTimestamp ($result['Enddate'], $includeTime = false) . '.' : 'You no longer have limitations on when you can make changes.') : ''))
-				. ($selfApprovalHasChanged ? "\n\n- " . ($amendedPermission[$permission]['Self-approval'] ? 'You can now choose to make pages live directly.' : 'The option you had of making pages live directly has been ended - pages require administrator approval.') : '')
+				. ($selfApprovalHasChanged ? "\n\n- " . ($amendedPermission['Self-approval'] ? 'You can now choose to make pages live directly.' : 'The option you had of making pages live directly has been ended - pages require administrator approval.') : '')
 				. ($result['message'] ? "\n\n{$result['message']}" : '');
 			$this->sendMail ($username, $message, $subjectSuffix = 'change to permission');
 		}
@@ -2945,6 +2913,22 @@ class pureContentEditor
 			return;
 		}
 		
+		# Get the permission (if supplied)
+		$permission = $this->attribute;
+		
+		# If a permission has been selected but does not exist, say so
+		if ($permission && !isSet ($permissions[$permission])) {
+			echo "\n<p class=\"failure\">There is no permission " . htmlentities (urldecode ($permission)) . '.</p>';
+			return false;
+		}
+		
+		# Ensure the user is a local user, as looked-up users cannot be edited
+		if (isSet ($permissions[$permission]['Source']) && $permissions[$permission]['Source'] == 'Lookup (database)') {
+			echo "\n<p class=\"failure\">This permission cannot be edited as its details come from an external database lookup.</p>";
+			return false;
+		}
+		
+		
 		# Create the form itself
 		$form = new form (array (
 			'developmentEnvironment' => $this->developmentEnvironment,
@@ -2962,7 +2946,9 @@ class pureContentEditor
 		    'title'                    => 'Permission to delete',
 			'description'	=> 'Permissions are listed in the form of <em>username (actual name): area</em>',
 		    'required'        => 1,
+			'default'	=> $permission,
 			'multiple' => false,
+			'editable' => (!$permission),
 		));
 		$form->input (array (
 		    'name'            => 'username',
@@ -2995,7 +2981,7 @@ class pureContentEditor
 		$this->logChange ("Revoked user {$result['username']}'s permission to edit {$scope}");
 		
 		# Send an e-mail (but don't reload the database!)
-		$this->sendMail ($result['username'], "Your permission to make changes to " . $this->convertPermission ($scope, $descriptions = true, $addLinks = false, $lowercaseStart = true) . ' has now been ended. Thank you for your help with this section.' . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'removal of editing rights for an area');
+		$this->sendMail ($result['username'], "Your permission to make changes to " . $this->convertPermission ($scope, $descriptions = true, $addLinks = false, $lowercaseStart = true) . ' has now been ended. Thank you for your help with this section.' . ($this->userIsAdministrator ($result['username']) ? ' However, you remain an administrator so have editable access across the site.' : '') . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'removal of editing rights for an area');
 		return true;
 	}
 	
