@@ -31,6 +31,7 @@ class pureContentEditor
 		'websiteName' => false,					// Name of the website, e.g. 'Department of XYZ' which proceeds 'website editing facility'
 		'liveSiteRoot' => NULL,					// Directory where the main site files are located
 		'filestoreRoot' => NULL,				// Directory where unapproved files are stored
+		'authTypeName' => 'Raven',				// Name of the authorisation system in use (as in %authType username and password)
 		'serverAdministrator' => NULL,			// E-mail of the server administrator
 		'userDatabase' => '/.users.csv',		// User database
 		'permissionsDatabase' => '/.permissions.csv',	// Permissions database
@@ -79,7 +80,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.0';
+	var $version = '1.5.1';
 	
 	
 	# Constructor
@@ -687,7 +688,9 @@ class pureContentEditor
 			
 			# Organise the lookup users
 			$fields = array ('Forename', 'Surname', 'E-mail', 'Administrator');
-			foreach ($this->lookup as $username => $attributes) {
+			foreach ($this->lookup as $index => $attributes) {
+				if (!isSet ($attributes['Username'])) {continue;}
+				$username = $attributes['Username'];
 				foreach ($fields as $field) {
 					$lookupUsers[$username][$field] = (isSet ($attributes[$field]) ? trim ($attributes[$field]) : '');
 				}
@@ -1997,7 +2000,7 @@ class pureContentEditor
 		}
 		
 		# Show the table of current users
-		echo "\n<p class=\"information\">The following are currently registered as users of the editing system. To edit a user's details, click on their username.</p>";
+		echo "\n<p class=\"information\">The following are currently registered as users of the editing system.<br />" . ($this->lookup ? "To edit a user's details, click on their username, though please note that those users whose details are sourced from a database lookup cannot be edited here but must be edited in the source database instead." : "To edit a user's details, click on their username.") . '</p>';
 		echo application::htmlTable ($usersFormatted);
 	}
 	
@@ -2082,7 +2085,7 @@ class pureContentEditor
 		# Signal success, firstly reloading the database
 		$this->users = $this->users ();
 		echo "\n<p class=\"success\">The user {$result['Forename']} {$result['Surname']} ({$result['Username']}) was successfully added" . ($result['Administrator'] ? ', as an administrator.' : ".<br />You may now wish to <a href=\"{$this->page}?permissionGrant={$result['Username']}\"><strong>add permissions for that user</strong></a>.") . '</p>';
-		$message  = "You now have access to the website editing facility. You can log into the pureContentEditor system at {$this->editSiteUrl}/ , using your Raven username and password. You are recommended to bookmark that address in your web browser.";
+		$message  = "You now have access to the website editing facility. You can log into the pureContentEditor system at {$this->editSiteUrl}/ , using your {$this->authTypeName} username and password. You are recommended to bookmark that address in your web browser.";
 		$message .= "\n\nYour username is: {$result['Username']}";
 		$message .= "\n\n" . ($result['Administrator'] ? 'You have been granted administrative rights, so you have editable access across the site rather than access to particular areas. You can also create/administer users and permissions.' : 'You will be separately advised of the area(s) of the site which you have permission to alter.');
 		$message .= ($result['message'] ? "\n\n{$result['message']}" : '');
@@ -2391,7 +2394,7 @@ class pureContentEditor
 		$permissions = $this->permissions;
 		
 		# Start a table of data; NB This way is better in this instance than using htmlTable (), as the data contains HTML which will have htmlentities () applied;
-		$html  = "\n<p class=\"information\">The following permissions are currently assigned:</p>";
+		$html  = "\n<p class=\"information\">The list below shows the permissions which are currently assigned.<br />" . ($this->lookup ? "To edit a permission, click on link in the left-most column, though please note that those users whose permissions are sourced from a database lookup cannot be edited here but must be edited in the source database instead." : '') . '</p>';
 		$html .= "\n" . '<table class="lines">';
 		$html .= "\n\t" . '<tr>';
 		#!# This line is only added because dateLimitation is the only amendable item currently
@@ -3362,7 +3365,7 @@ class pureContentEditor
 			# Add the user's name to the message, the signature, and login details
 			$message  = "\nDear " . $nameMessage . ",\n\n" . $message;
 			$message .= "\n\n\n" . $this->messageSignatureGreeting . "\n" . $this->convertUsername ($this->user);
-			$message .= "\n\n\n--\nAuthorised users can log into the pureContentEditor system at {$this->editSiteUrl}/ , using their Raven username and password.";
+			$message .= "\n\n\n--\nAuthorised users can log into the pureContentEditor system at {$this->editSiteUrl}/ , using their {$this->authTypeName} username and password.";
 		}
 		
 		#!# At this point, perform check that the to(s) and from exist before trying to send it!
@@ -3687,7 +3690,6 @@ class pureContentEditor
 #!# Option not to mail yourself when you approve your own page and you are the only administrator
 #!# Audit the use of relative links
 #!# Enable user to be able to save pages directly without approval
-#!# Remove hard-coded mention of Raven
 #!# Checking writability needs to be done on the proposed file, NOT at top level
 
 
