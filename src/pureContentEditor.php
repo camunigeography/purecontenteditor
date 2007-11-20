@@ -80,7 +80,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.1';
+	var $version = '1.5.2';
 	
 	
 	# Constructor
@@ -505,9 +505,6 @@ class pureContentEditor
 	{
 		# Get the contents (NB is readable has been done within editableFile (); no false checking is done here, as this could indicate a zero-length file)
 		$contents = file_get_contents ($this->editableFile);
-		
-		# Pre-process the contents
-		$contents = $this->preprocessContents ($contents);
 		
 		# Return the contents
 		return $contents;
@@ -1374,6 +1371,9 @@ class pureContentEditor
 		# Add the heading
 		if ($heading) {$form->heading ('', $heading);}
 		
+		# Pre-process the contents
+		$contents = $this->preprocessContents ($this->editableFileContents);
+		
 		# Give the correct type of editing box
 		switch ($this->typeOfFile) {
 			
@@ -1382,8 +1382,8 @@ class pureContentEditor
 				$form->input (array (
 					'name'			=> 'content',
 					'title'					=> 'Title for the section (title file)',
-					'description'	=> 'Please capitalise correctly. This is the text that will appear in the breadcrumb trail and must not be too long.',
-					'default'			=> $this->editableFileContents,
+					'description'	=> "Please capitalise correctly. This is the text that will appear in the breadcrumb trail (the 'You are in...' line) and must not be too long.",
+					'default'			=> $contents,
 					'required'				=> true,
 				));
 				break;
@@ -1401,7 +1401,7 @@ class pureContentEditor
 						'required'	=> true,
 						'cols'		=> $this->textareaEditorWidth,
 						'rows'		=> $this->textareaEditorHeight,
-						'default'	=> $this->editableFileContents,
+						'default'	=> $contents,
 						'wrap'		=> 'off',
 					));
 					
@@ -1422,7 +1422,7 @@ class pureContentEditor
 						'required'				=> true,
 						'width'					=> $this->richtextEditorWidth,
 						'height'				=> $this->richtextEditorHeight,
-						'default'				=> $this->editableFileContents,
+						'default'				=> $contents,
 						'editorBasePath'		=> $this->richtextEditorBasePath,
 						'editorToolbarSet'		=> $this->richtextEditorToolbarSet,
 						'editorConfig'			=> array (
@@ -1523,7 +1523,7 @@ class pureContentEditor
 		}
 		
 		# Delete the template if it is one
-		if ($this->pageIsTemplate ($this->editableFileContents)) {
+		if ($this->pageIsTemplate ($contents)) {
 			if (!@unlink ($this->editableFile)) {
 				$this->reportErrors ('There was a problem deleting the template file.', "The filename was {$this->editableFile} .");
 				return false;
@@ -1618,8 +1618,8 @@ class pureContentEditor
 		
 		$form->input (array (
 			'name'			=> 'title',
-			'title'					=> ($this->isBlogTreeRoot ? "Title of blog (e.g. 'Webmaster's blog')" : 'Title (for breadcrumb trail)'),
-			'description'	=> 'Please capitalise correctly. This is the text that will appear in the breadcrumb trail and must not be too long.',
+			'title'					=> ($this->isBlogTreeRoot ? "Title of blog (e.g. 'Webmaster's blog')" : "Title, for breadcrumb trail (the 'You are in...' line)"),
+			'description'	=> "Please capitalise correctly. This is the text that will appear in the breadcrumb trail (the 'You are in...' line) and must not be too long.",
 			'required'				=> true,
 		));
 		
