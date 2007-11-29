@@ -80,7 +80,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.2';
+	var $version = '1.5.3';
 	
 	
 	# Constructor
@@ -107,6 +107,10 @@ class pureContentEditor
 		require_once ('pureContent.php');
 		require_once ('ultimateForm.php');
 		
+		# State the expected fields from the user and permission databases
+		$this->userDatabaseHeaders = array ('Username' , 'Forename' , 'Surname' , 'E-mail' , 'Administrator');
+		$this->permissionsDatabaseFields = array ('Key', 'Username', 'Location', 'Self-approval', 'Startdate', 'Enddate', );
+		
 		# Assign the user
 		$this->user = $_SERVER['REMOTE_USER'];
 		
@@ -121,10 +125,6 @@ class pureContentEditor
 		
 		# Get the current directory for this page
 		$this->currentDirectory = $this->currentDirectory ();
-		
-		# State the expected fields from the user and permission databases
-		$this->userDatabaseHeaders = array ('Username' , 'Forename' , 'Surname' , 'E-mail' , 'Administrator');
-		$this->permissionsDatabaseFields = array ('Key', 'Username', 'Location', 'Self-approval', 'Startdate', 'Enddate', );
 		
 		# Get the users (which will force creation if there are none)
 		if (!$this->administrators = $this->administrators ()) {return false;}
@@ -668,8 +668,10 @@ class pureContentEditor
 	# Function to get users
 	function users ()
 	{
-		# Get the CSV (local) users
-		$csvUsers = csv::getData ($this->userDatabase);
+		# Get the CSV (local) users, ensuring the result is an array so that array_merge doesn't crash
+		if (!$csvUsers = csv::getData ($this->userDatabase)) {
+			$csvUsers = array ();
+		}
 		
 		# Get the lookup data
 		$lookupUsers = array ();
@@ -2062,10 +2064,12 @@ class pureContentEditor
 		# Show the form and get any results or end here
 		if (!$result = $form->process ()) {return;}
 		
-		# If the user is already in the database, end here
+		# If the user is already in the local database, end here
 		if (isSet ($this->users[$result['Username']])) {
-			echo "\n<p class=\"failure\">The user {$result['Username']} already exists and so was not added.</p>";
-			return false;
+			if (!$this->lookup || ($this->lookup && ($this->users[$result['Username']]['source'] == 'Lookup (database)'))) {
+				echo "\n<p class=\"failure\">The user {$result['Username']} already exists and so was not added.</p>";
+				return false;
+			}
 		}
 		
 		# Flatten the checkbox result
