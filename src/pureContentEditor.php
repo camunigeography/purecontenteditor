@@ -64,6 +64,7 @@ class pureContentEditor
 		'protectEmailAddresses' => true,	// Whether to obfuscate e-mail addresses
 		'externalLinksTarget'	=> '_blank',	// The window target name which will be instanted for external links (as made within the editing system) or false
 		'imageAlignmentByClass'	=> true,		// Replace align="foo" with class="foo" for images
+		'imageConvertAbsolute'	=> false,		// Whether to pre-process the HTML to make images have absolute URLs
 		'logout'	=> false,	// False if there is no logout available from the authentication agent or the location of the page
 		'disableDateLimitation' => false,	// Whether to disable the date limitation functionality
 		'allowNewLocation'		=> true,	// Whether to allow the adminisrator to approve the page at a new location
@@ -74,13 +75,14 @@ class pureContentEditor
 		'newBlogIndexTemplate' => "<h1>%title</h1>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogIndex ();\n?>",	// Default directory index file contents
 		'newBlogTreeRootTemplate' => "<h1>Blogs</h1>\n\n<p>Welcome to the blogs section!</p>\n<p>The following blogs are available at present:</p>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogList ();\n?>",
 		'lookup'	=> array (),	// Array of areas which people have automatic editing rights rather than being stored by pureContentEditor, as array (username1 => array (Username,Forename,Surname,E-mail,Location and optionally Administrator (as value 1 or 0)), username2...)
+		'bodyAttributes'	=> true, 	// Whether to apply body attributes to the editing area
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.3';
+	var $version = '1.5.4';
 	
 	
 	# Constructor
@@ -562,11 +564,17 @@ class pureContentEditor
 	# Function to pre-process the page contents
 	function preprocessContents ($content)
 	{
-		# List replacements
+		# Standard replacements
 		$replacements = array (
 			" src=\"{$this->editSiteUrl}/"	=> ' src="/',			// Ensure images are not prefixed with the current site's URL
-			' src="([^/|http://|https://])'				=> ' src="' . $this->currentDirectory . '\\1',		// Ensure all images are absolute
 		);
+		
+		# Force images to absolute if required
+		if ($this->imageConvertAbsolute) {
+			$replacements += array (
+				' src="([^/|http://|https://])'				=> ' src="' . $this->currentDirectory . '\\1',
+			);
+		}
 		
 		# Replacement of image class with a similarly-named align attribute (this is then reversed afterwards - this is so that the DHTML editor picks up the alignment correctly
 		if ($this->imageAlignmentByClass) {
@@ -1430,7 +1438,9 @@ class pureContentEditor
 						'editorConfig'			=> array (
 							'StartupFocus'			=> true,
 							'EditorAreaCSS'			=> $this->richtextEditorEditorAreaCSS,
-							// 'BaseHref'				=> $this->currentDirectory, // Doesn't work, and http://sourceforge.net/tracker/?group_id=75348&atid=543653&func=detail&aid=1205638 doesn't fix it
+							'BaseHref'				=> $this->liveSiteUrl . $this->currentDirectory,	// Adds support for relative images
+							'BodyId'			=> ($this->bodyAttributes ? pureContent::bodyAttributesId () : false),
+							'BodyClass'			=> ($this->bodyAttributes ? pureContent::bodyAttributesClass () : false),
 						),
 						'protectEmailAddresses' => $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
 						'externalLinksTarget'	=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
@@ -3714,7 +3724,6 @@ class pureContentEditor
 # Tighten up matching of ' src=' (currently will match that string outside an img tag)
 # Allow browsing of empty folders - should suggest creating a file
 # Move as many changes as possible made within /_fckeditor into the PHP constructor (as passed through ultimateForm.php)
-# Remove preprocessContents () once FCKeditor.BaseHref works correctly
 # Add use of application::getTitleFromFileContents in convertPermission () to get the contents for files
 # Find some way to enable browsing of /foo/bar/[no index.html] where that is a new directory that does not exist on the live site - maybe a mod_rewrite change
 # More control over naming - moving regexp into the settings but disallow _ at the start
