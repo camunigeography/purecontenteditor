@@ -1,6 +1,7 @@
 <?php
 
 
+
 /**
  * A class to create an editing facility on top of a pureContent-enabled site
  * 
@@ -76,13 +77,14 @@ class pureContentEditor
 		'newBlogTreeRootTemplate' => "<h1>Blogs</h1>\n\n<p>Welcome to the blogs section!</p>\n<p>The following blogs are available at present:</p>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogList ();\n?>",
 		'lookup'	=> array (),	// Array of areas which people have automatic editing rights rather than being stored by pureContentEditor, as array (username1 => array (Username,Forename,Surname,E-mail,Location and optionally Administrator (as value 1 or 0)), username2...)
 		'bodyAttributes'	=> true, 	// Whether to apply body attributes to the editing area
+		'charset'							=> 'UTF-8',		# Encoding used in entity conversions; www.joelonsoftware.com/articles/Unicode.html is worth a read
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.4';
+	var $version = '1.5.5';
 	
 	
 	# Constructor
@@ -1574,7 +1576,8 @@ class pureContentEditor
 			$html .= "\n<p class=\"{$class}\">The submitted underlying HTML was as follows:</p>";
 			$html .= "\n<hr />";
 			$html .= "\n<pre>";
-			$html .= ($this->wordwrapViewedSubmittedHtml ? wordwrap (htmlentities ($content)) : htmlentities ($content));
+			$content = htmlentities ($content, ENT_COMPAT, $this->charset);
+			$html .= ($this->wordwrapViewedSubmittedHtml ? wordwrap ($content) : $content);
 			$html .= "\n</pre>";
 			$html .= "\n<hr />";
 		}
@@ -1594,7 +1597,7 @@ class pureContentEditor
 		$currentFoldersRegexp = $this->currentPagesFoldersRegexp ($currentFolders);
 		
 		# Hack to get the current page submitted, used for a link if necessary
-		$folderSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new']) . '/' : '');
+		$folderSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new'], ENT_COMPAT, $this->charset) . '/' : '');
 		
 		# Form for the new folder
 		$form = new form (array (
@@ -1867,7 +1870,7 @@ class pureContentEditor
 			$currentPagesRegexp = $this->currentPagesFoldersRegexp ($currentPages);
 			
 			# Hack to get the current page submitted, used for a link if necessary
-			$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new']) : '');
+			$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new'], ENT_COMPAT, $this->charset) : '');
 			
 			# Page name
 			$form->input (array (
@@ -2615,7 +2618,7 @@ class pureContentEditor
 		
 		# If a permission has been selected but does not exist, say so
 		if ($permission && !isSet ($this->permissions[$permission])) {
-			echo "\n<p class=\"failure\">There is no permission " . htmlentities (urldecode ($permission)) . '.</p>';
+			echo "\n<p class=\"failure\">There is no permission " . htmlentities (urldecode ($permission), ENT_COMPAT, $this->charset) . '.</p>';
 			return false;
 		}
 		
@@ -2935,7 +2938,7 @@ class pureContentEditor
 		
 		# If a permission has been selected but does not exist, say so
 		if ($permission && !isSet ($permissions[$permission])) {
-			echo "\n<p class=\"failure\">There is no permission " . htmlentities (urldecode ($permission)) . '.</p>';
+			echo "\n<p class=\"failure\">There is no permission " . htmlentities (urldecode ($permission), ENT_COMPAT, $this->charset) . '.</p>';
 			return false;
 		}
 		
@@ -3084,12 +3087,12 @@ class pureContentEditor
 		
 		# Define the actions
 		$actions = array (
-			'approve-message'	=> 'Approve it (move to live site) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' †',
+			'approve-message'	=> 'Approve it (move to live site) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' ',
 			'approve'			=> 'Approve it (move to live site) but send no message',
-			'reject-message'	=> 'Reject it (and delete the file) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' †',
+			'reject-message'	=> 'Reject it (and delete the file) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' ',
 			'reject'			=> 'Reject it (and delete the file) but send no message',
 			'edit'				=> "Edit it further now (without sending a message)",
-			'message'			=> 'Only send a message to its creator (add a message below) †',
+			'message'			=> 'Only send a message to its creator (add a message below) ',
 		);
 		$form->radiobuttons (array (
 			'name'				=> 'action',
@@ -3398,10 +3401,10 @@ class pureContentEditor
 		if ($showMessageOnScreen) {
 			echo "\n<p class=\"success\">The following message has been sent:</p>";
 			echo "\n<blockquote><pre>";
-			echo "\n" . htmlentities ($from);
-			echo "\n<strong>" . wordwrap ('To: ' . htmlentities ($recipientList)) . '</strong>';
-			echo "\n" . wordwrap ('Subject: ' . htmlentities ($subject)) . '</strong>';
-			echo "\n\n" . wordwrap (htmlentities ($message));
+			echo "\n" . htmlentities ($from, ENT_COMPAT, $this->charset);
+			echo "\n<strong>" . wordwrap ('To: ' . htmlentities ($recipientList, ENT_COMPAT, $this->charset)) . '</strong>';
+			echo "\n" . wordwrap ('Subject: ' . htmlentities ($subject, ENT_COMPAT, $this->charset)) . '</strong>';
+			echo "\n\n" . wordwrap (htmlentities ($message, ENT_COMPAT, $this->charset));
 			echo "\n</pre></blockquote>";
 		}
 		
