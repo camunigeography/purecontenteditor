@@ -84,7 +84,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.5';
+	var $version = '1.5.6';
 	
 	
 	# Constructor
@@ -3422,8 +3422,11 @@ class pureContentEditor
 		# Get the address
 		$attributes = $this->users[$user];
 		
-		# Construct the string
-		$string = "\"{$attributes['Forename']} {$attributes['Surname']}\" <{$attributes['E-mail']}>";
+		# Construct the string, surrounding it with the name if on a non-Windows platform
+		$string = $attributes['E-mail'];
+		if (PHP_OS != 'WINNT') {
+			$string = "\"{$attributes['Forename']} {$attributes['Surname']}\" <{$string}>";
+		}
 		
 		# Return the string
 		return $string;
