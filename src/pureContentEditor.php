@@ -78,13 +78,15 @@ class pureContentEditor
 		'lookup'	=> array (),	// Array of areas which people have automatic editing rights rather than being stored by pureContentEditor, as array (username1 => array (Username,Forename,Surname,E-mail,Location and optionally Administrator (as value 1 or 0)), username2...)
 		'bodyAttributes'	=> true, 	// Whether to apply body attributes to the editing area
 		'charset'							=> 'UTF-8',		# Encoding used in entity conversions; www.joelonsoftware.com/articles/Unicode.html is worth a read
+		'tipsUrl'				=> 'http://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf',	// Location of tip sheet
+		'makeLiveDefaultChecked' => true,	// Whether the 'make live by default' option should be checked by default
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.6';
+	var $version = '1.5.7';
 	
 	
 	# Constructor
@@ -624,8 +626,14 @@ class pureContentEditor
 		# Otherwise use the standard, previous default behaviour
 		} else {
 			
+			# Ensure the query string is in UTF-8 if required
+			$queryString = $_SERVER['QUERY_STRING'];
+			if ($this->charset == 'UTF-8') {
+				$queryString = utf8_encode (urldecode ($_SERVER['QUERY_STRING']));
+			}
+			
 			# Get the query
-			$query = explode ('&', $_SERVER['QUERY_STRING']);
+			$query = explode ('&', $queryString);
 			
 			# Assign the page
 			$page = (!isSet ($_SERVER['REDIRECT_SCRIPT_URL']) ? $query[0] : $_SERVER['REDIRECT_SCRIPT_URL']);
@@ -644,12 +652,12 @@ class pureContentEditor
 				$action = $split[0];
 				$attribute = (isSet ($split[1]) ? $split[1] : '');
 				
-	/*	breadcrumb editing work - TODO
+/*	breadcrumb editing work - TODO
 				# If the breadcrumb type is requested, substitute the directory index component with the breadcrumb component
 				if ($action == 'breadcrumb') {
 					$page = ereg_replace (basename ($page) . '$', $this->pureContentTitleFile, $page);
 				}
-	*/
+*/
 			}
 		}
 		
@@ -1274,7 +1282,9 @@ class pureContentEditor
 		$html .= "\n<h1>Tips/help/about</h1>";
 		$html .= "\n<p>Welcome to the pureContentEditor! Use of this system is intended to be largely self-explanatory: you can browse around the site as normal, and perform various actions using the menu buttons above.</p>";
 		$html .= "\n<h2>Tips</h2>";
-		$html .= "\n" . '<p>A <a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf" target="_blank">tip sheet</a> can be printed off and stuck next to your computer.</p>';
+		$html .= "\n" . "<p><a href=\"{$this->tipsUrl}\" target=\"_blank\"><strong>Help/tips on using the editor</strong></a> are available.</p>";
+		$html .= "\n<h2>Richtext editor user guide</h2>";
+		$html .= "\n" . "<p>There is also a comprehensive <a href=\"http://docs.fckeditor.net/FCKeditor_2.x/Users_Guide\" target=\"_blank\">user guide for the Microsoft Word-style editor part</a> of the system (the richtext editor).</p>";
 		$html .= "\n<h2>Requirements</h2>";
 		$html .= "\n" . '<p>Most modern browsers, as <a href="http://www.fckeditor.net/" target="external">listed at fckeditor.net</a>, are supported.</p>';
 		$html .= "\n<p>If your browser has a popup blocker, this must be disabled for this site.</p>";
@@ -1470,6 +1480,7 @@ class pureContentEditor
 			    'name'			=> 'preapprove',
 			    'values'			=> array ($makeLiveDirectlyText,),
 			    'title'					=> $makeLiveDirectlyText,
+				'default'		=> ($this->makeLiveDefaultChecked ? array ($makeLiveDirectlyText) : false),
 			));
 		}
 		
@@ -1576,7 +1587,7 @@ class pureContentEditor
 			$html .= "\n<p class=\"{$class}\">The submitted underlying HTML was as follows:</p>";
 			$html .= "\n<hr />";
 			$html .= "\n<pre>";
-			$content = htmlentities ($content, ENT_COMPAT, $this->charset);
+			$content = htmlspecialchars ($content);
 			$html .= ($this->wordwrapViewedSubmittedHtml ? wordwrap ($content) : $content);
 			$html .= "\n</pre>";
 			$html .= "\n<hr />";
@@ -1597,7 +1608,7 @@ class pureContentEditor
 		$currentFoldersRegexp = $this->currentPagesFoldersRegexp ($currentFolders);
 		
 		# Hack to get the current page submitted, used for a link if necessary
-		$folderSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new'], ENT_COMPAT, $this->charset) . '/' : '');
+		$folderSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlspecialchars ($_POST['form']['new']) . '/' : '');
 		
 		# Form for the new folder
 		$form = new form (array (
@@ -1870,7 +1881,7 @@ class pureContentEditor
 			$currentPagesRegexp = $this->currentPagesFoldersRegexp ($currentPages);
 			
 			# Hack to get the current page submitted, used for a link if necessary
-			$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlentities ($_POST['form']['new'], ENT_COMPAT, $this->charset) : '');
+			$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlspecialchars ($_POST['form']['new'], ENT_COMPAT, $this->charset) : '');
 			
 			# Page name
 			$form->input (array (
@@ -2410,7 +2421,7 @@ class pureContentEditor
 		# Get the permissions
 		$permissions = $this->permissions;
 		
-		# Start a table of data; NB This way is better in this instance than using htmlTable (), as the data contains HTML which will have htmlentities () applied;
+		# Start a table of data; NB This way is better in this instance than using htmlTable (), as the data contains HTML which will have entity conversion applied;
 		$html  = "\n<p class=\"information\">The list below shows the permissions which are currently assigned.<br />" . ($this->lookup ? "To edit a permission, click on link in the left-most column, though please note that those users whose permissions are sourced from a database lookup cannot be edited here but must be edited in the source database instead." : '') . '</p>';
 		$html .= "\n" . '<table class="lines">';
 		$html .= "\n\t" . '<tr>';
@@ -2618,7 +2629,7 @@ class pureContentEditor
 		
 		# If a permission has been selected but does not exist, say so
 		if ($permission && !isSet ($this->permissions[$permission])) {
-			echo "\n<p class=\"failure\">There is no permission " . htmlentities (urldecode ($permission), ENT_COMPAT, $this->charset) . '.</p>';
+			echo "\n<p class=\"failure\">There is no permission " . htmlspecialchars ($permission) . '.</p>';
 			return false;
 		}
 		
@@ -2938,7 +2949,7 @@ class pureContentEditor
 		
 		# If a permission has been selected but does not exist, say so
 		if ($permission && !isSet ($permissions[$permission])) {
-			echo "\n<p class=\"failure\">There is no permission " . htmlentities (urldecode ($permission), ENT_COMPAT, $this->charset) . '.</p>';
+			echo "\n<p class=\"failure\">There is no permission " . htmlspecialchars ($permission) . '.</p>';
 			return false;
 		}
 		
@@ -3392,6 +3403,7 @@ class pureContentEditor
 		
 		# Send the mail; ensure the editSiteUrl is set (it may not be if this function is being thrown by reportErrors ()
 		$subject = ($this->websiteName ? $this->websiteName : $this->liveSiteUrl) . ' website editing facility' . ($subjectSuffix ? ': ' . $subjectSuffix : '');
+		#!# Mail sending needs to be in UTF-8 if selected; umlauts and accents fail to transmit correctly in the From: line
 		if (!mail ($recipientList, $subject, wordwrap ($message), $from)) {
 			echo "\n<p class=\"failure\">There was a problem sending an e-mail to the user.</p>";
 			return false;
@@ -3401,10 +3413,10 @@ class pureContentEditor
 		if ($showMessageOnScreen) {
 			echo "\n<p class=\"success\">The following message has been sent:</p>";
 			echo "\n<blockquote><pre>";
-			echo "\n" . htmlentities ($from, ENT_COMPAT, $this->charset);
-			echo "\n<strong>" . wordwrap ('To: ' . htmlentities ($recipientList, ENT_COMPAT, $this->charset)) . '</strong>';
-			echo "\n" . wordwrap ('Subject: ' . htmlentities ($subject, ENT_COMPAT, $this->charset)) . '</strong>';
-			echo "\n\n" . wordwrap (htmlentities ($message, ENT_COMPAT, $this->charset));
+			echo "\n" . htmlspecialchars ($from);
+			echo "\n<strong>" . wordwrap ('To: ' . htmlspecialchars ($recipientList)) . '</strong>';
+			echo "\n" . wordwrap ('Subject: ' . htmlspecialchars ($subject)) . '</strong>';
+			echo "\n\n" . wordwrap (htmlspecialchars ($message));
 			echo "\n</pre></blockquote>";
 		}
 		
