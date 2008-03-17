@@ -44,6 +44,7 @@ class pureContentEditor
 		'richtextEditorEditorAreaCSS' => '/sitetech/global.css',	# CSS file to use in the editor area
 		'richtextEditorBasePath' => '/_fckeditor/',	// Location of the DHTML editing component files
 		'richtextEditorToolbarSet' => 'pureContent',	// Richtext editor Toolbar set (must exist in fckconfig-customised.js)
+		'CKFinder' => false,	// Whether to use the CKFinder plugin
 		'directoryIndex' => 'index.html',		// Default directory index name
 		'templateMark' => '<!-- pureContentEditor template -->',	// Internal template mark; should not be changed
 		'newPageTemplate' => "\n<h1>Title goes here</h1>\n<p>Content starts here</p>",	// Default directory index file contents
@@ -86,7 +87,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.7';
+	var $version = '1.5.8';
 	
 	
 	# Constructor
@@ -1454,6 +1455,7 @@ class pureContentEditor
 							'BodyId'			=> ($this->bodyAttributes ? pureContent::bodyAttributesId () : false),
 							'BodyClass'			=> ($this->bodyAttributes ? pureContent::bodyAttributesClass () : false),
 						),
+						'CKFinder'				=> $this->CKFinder,					// Whether to use the CKFinder plugin
 						'protectEmailAddresses' => $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
 						'externalLinksTarget'	=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
 						'directoryIndex' 		=> $this->directoryIndex,			// Default directory index name
