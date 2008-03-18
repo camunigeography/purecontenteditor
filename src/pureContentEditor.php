@@ -81,13 +81,14 @@ class pureContentEditor
 		'charset'							=> 'UTF-8',		# Encoding used in entity conversions; www.joelonsoftware.com/articles/Unicode.html is worth a read
 		'tipsUrl'				=> 'http://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf',	// Location of tip sheet
 		'makeLiveDefaultChecked' => true,	// Whether the 'make live by default' option should be checked by default
+		'leaveLink'	=> false,		// Whether to add a link for 'leave editing mode'
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.8';
+	var $version = '1.5.9';
 	
 	
 	# Constructor
@@ -119,16 +120,16 @@ class pureContentEditor
 		$this->permissionsDatabaseFields = array ('Key', 'Username', 'Location', 'Self-approval', 'Startdate', 'Enddate', );
 		
 		# Assign the user
-		$this->user = $_SERVER['REMOTE_USER'];
+		$this->user = (isSet ($_SERVER['REMOTE_USER']) ? $_SERVER['REMOTE_USER'] : NULL);
 		
 		# Ensure the setup is OK
 		if (!$this->setup ($parameters)) {return false;}
 		
-		# Get the users (which will force creation if there are none)
-		if (!$this->users = $this->users ()) {return false;}
-		
 		# Get the current page and attributes from the query string
 		if (!list ($this->page, $this->action, $this->attribute) = $this->parseQueryString ()) {return false;}
+		
+		# Get the users (which will force creation if there are none)
+		if (!$this->users = $this->users ()) {return false;}
 		
 		# Get the current directory for this page
 		$this->currentDirectory = $this->currentDirectory ();
@@ -244,7 +245,7 @@ class pureContentEditor
 		if (($_SERVER['_SERVER_PROTOCOL_TYPE'] != $this->editHostScheme) || ($_SERVER['SERVER_NAME'] != $this->editHostName) || ($_SERVER['SERVER_PORT'] != $this->editHostPort)) {$setupErrors[] = 'The editing facility must be run from the URL specified in the settings.';}
 		
 		# Check that the server is defining a remote user
-		if (!isSet ($_SERVER['REMOTE_USER'])) {$setupErrors[] = 'The server did not supply a username, so the editing facility is unavailable.';}
+		if (!$this->user) {$setupErrors[] = 'The server did not supply a username, so the editing facility is unavailable.';}
 		
 		# Ensure the filestoreRoot and liveSiteRoot are not slash-terminated
 		$this->filestoreRoot = ((substr ($this->filestoreRoot, -1) == '/') ? substr ($this->filestoreRoot, 0, -1) : $this->filestoreRoot);
@@ -308,15 +309,15 @@ class pureContentEditor
 		# Ensure any lookup is an array
 		$this->lookup = application::ensureArray ($this->lookup);
 		
-		# Ensure the permissions database exists
-		if (!file_exists ($this->permissionsDatabase)) {
+		# Ensure the permissions database exists, by creating it if it doesn't exist or is an empty file
+		if (!file_exists ($this->permissionsDatabase) || !filesize ($this->permissionsDatabase)) {
 			if (!csv::createNew ($this->permissionsDatabase, $this->permissionsDatabaseFields)) {
 				$setupErrors[] = 'There was a problem creating the permissions database.';
 			}
 		}
 		
-		# Ensure the user database exists
-		if (!file_exists ($this->userDatabase)) {
+		# Ensure the user database exists, by creating it if it doesn't exist or is an empty file
+		if (!file_exists ($this->userDatabase) || !filesize ($this->userDatabase)) {
 			if (!csv::createNew ($this->userDatabase, $this->userDatabaseHeaders)) {
 				$setupErrors[] = 'There was a problem creating the user database.';
 			}
@@ -976,7 +977,7 @@ class pureContentEditor
 			),
 			
 			'edit' => array (
-				'title' => (($this->isBlogMode && !$this->isBlogTreeRoot) ? 'Edit this blog posting' : 'Edit this page'),
+				'title' => (($this->isBlogMode && !$this->isBlogTreeRoot) ? 'Edit this blog posting' : '<strong>Edit this page</strong>'),
 				#!# Find a way to get this removed
 				'url' => $this->page . '?edit',	// Necessary to ensure index.html is at the end of the page
 				'tooltip' => ($this->isBlogMode ? 'Edit the current blog posting' : 'Edit the current page'),
@@ -1061,6 +1062,15 @@ class pureContentEditor
 				'grouping' => 'Additional',
 			),
 			
+			'leave' => array (
+				'title' => 'Leave editing mode',
+				'tooltip' => 'Go to normal viewing mode, without logging out',
+				'administratorsOnly' => false,
+				'grouping' => 'Additional',
+				'check'		=> 'leaveLink',
+				'url' => $this->liveSiteUrl . $this->page,
+			),
+			
 			'help' => array (
 				'title' => 'Tips/help',
 				'tooltip' => 'Tip sheet and other help tips, as well as information about this system',
@@ -1073,7 +1083,7 @@ class pureContentEditor
 				'tooltip' => 'Log out when you have finished working with the editing system to secure your account',
 				'url' => ($this->logout ? $this->logout : '?logout'),
 				'administratorsOnly' => false,
-				'grouping' => 'Additional',
+				'grouping' => false,
 			),
 			
 			'userList' => array (
@@ -1204,11 +1214,13 @@ class pureContentEditor
 		# Group the actions
 		foreach ($this->actions as $action => $attributes) {
 			$grouping = $attributes['grouping'];
+			if (!$grouping) {continue;}
 			$menu[$grouping][] = $action;
 		}
 		
 		# Compile the task box HTML
 		$html  = "\n\n<div id=\"administration\" class=\"graybox\">";
+		$html .= "\n\n<p class=\"right\"><a href=\"" . ($this->logout ? $this->logout : '?logout') . '" title="Log out when you have finished working with the editing system to secure your account">[Log out]</a></p>';
 		$html .= "\n\t<p><em>pureContentEditor</em> actions available here for <strong>{$this->user}" . ($this->userIsAdministrator ? ' (ADMIN)' : '') . '</strong>:</p>';
 		$html .= "\n\t<ul>";
 		foreach ($menu as $group => $actions) {
@@ -2114,7 +2126,7 @@ class pureContentEditor
 		
 		# Signal success, firstly reloading the database
 		$this->users = $this->users ();
-		echo "\n<p class=\"success\">The user {$result['Forename']} {$result['Surname']} ({$result['Username']}) was successfully added" . ($result['Administrator'] ? ', as an administrator.' : ".<br />You may now wish to <a href=\"{$this->page}?permissionGrant={$result['Username']}\"><strong>add permissions for that user</strong></a>.") . '</p>';
+		echo "\n<p class=\"success\">The user {$result['Forename']} {$result['Surname']} ({$result['Username']}) was successfully added" . ($result['Administrator'] ? ', as an administrator. <a href="/"><strong>Continue.</strong></a>' : ".<br />You may now wish to <a href=\"{$this->page}?permissionGrant={$result['Username']}\"><strong>add permissions for that user</strong></a>.") . '</p>';
 		$message  = "You now have access to the website editing facility. You can log into the pureContentEditor system at {$this->editSiteUrl}/ , using your {$this->authTypeName} username and password. You are recommended to bookmark that address in your web browser.";
 		$message .= "\n\nYour username is: {$result['Username']}";
 		$message .= "\n\n" . ($result['Administrator'] ? 'You have been granted administrative rights, so you have editable access across the site rather than access to particular areas. You can also create/administer users and permissions.' : 'You will be separately advised of the area(s) of the site which you have permission to alter.');
@@ -3351,7 +3363,7 @@ class pureContentEditor
 		if (!$this->serverAdministrator) {return false;}
 		
 		# Construct the message; note that $this->users may not yet exist so it can't be used to get the user's real name
-		$introduction = 'The following ' . (count ($errors) == 1 ? 'problem was' : 'problems were') . " encountered (by user {$this->user}):";
+		$introduction = 'The following ' . (count ($errors) == 1 ? 'problem was' : 'problems were') . ' encountered' . ($this->user ? " (by user {$this->user})" : '') . ':';
 		$message = "\nDear webserver administrator,\n\n$introduction\n\n" . '- ' . implode ("\n\n- ", $errors);
 		
 		# If there is provide information, add this
