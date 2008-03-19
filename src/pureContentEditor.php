@@ -46,6 +46,7 @@ class pureContentEditor
 		'richtextEditorToolbarSet' => 'pureContent',	// Richtext editor Toolbar set (must exist in fckconfig-customised.js)
 		'CKFinder' => false,	// Whether to use the CKFinder plugin
 		'directoryIndex' => 'index.html',		// Default directory index name
+		'virtualPages'	=> false,		// Regexp location(s) where a page is claimed already to exist but there is no physical file
 		'templateMark' => '<!-- pureContentEditor template -->',	// Internal template mark; should not be changed
 		'newPageTemplate' => "\n<h1>Title goes here</h1>\n<p>Content starts here</p>",	// Default directory index file contents
 		'messageSignatureGreeting' => 'Best wishes,',	// Preset text for the e-mail signature to users
@@ -88,7 +89,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.9';
+	var $version = '1.5.10';
 	
 	
 	# Constructor
@@ -199,7 +200,7 @@ class pureContentEditor
 		
 		# Check that the action is allowed; 'live' is a special case as it's not a real function as such, as is logout
 		if (!array_key_exists ($this->action, $this->actions) || $this->action == 'live' || ($this->action == 'logout' && $this->logout)) {
-			echo "\n" . '<p class="failure">You appear to have requested a non-existent/unavailable function which is not available. Please use one of the links in the menu to continue.</p>';
+			echo "\n" . '<p class="failure">You appear to have requested a non-existent/unavailable function which is not available or to which you do not have access. Please use one of the links in the menu to continue.</p>';
 			return false;
 		}
 		
@@ -448,6 +449,9 @@ class pureContentEditor
 	# Function to check whether a current directory contains an index page
 	function directoryContainsIndex ()
 	{
+		# Return true if a virtual page exists
+		if ($this->matchLocation ($this->virtualPages, $this->currentDirectory . $this->directoryIndex)) {return true;}
+		
 		# Return false if it doesn't exist on the live site
 		if (file_exists ($this->liveSiteRoot . $this->currentDirectory . $this->directoryIndex)) {return true;}
 		
@@ -874,6 +878,12 @@ class pureContentEditor
 	# Function to perform a location match; returns either a string (equating to true) or false
 	function matchLocation ($locations, $test, $determineLocationInUse = false)
 	{
+		# End if no locations
+		if (!$locations) {return false;}
+		
+		# Convert the locations to an array if not already
+		$locations = application::ensureArray ($locations);
+		
 		# Loop through each location (which are ordered such that overriding rights are listed (and will thus be matched) first (i.e. tree>directory>page)
 		foreach ($locations as $location) {
 			
@@ -900,6 +910,11 @@ class pureContentEditor
 						return 'tree';	// i.e. true
 					}
 				}
+			}
+			
+			# Check for exact regexp matches, which would be a on a per-page basis as the others have not caught it
+			if (ereg ($location, $test)) {
+				return 'page';	// i.e. true
 			}
 		}
 		
@@ -1775,8 +1790,27 @@ class pureContentEditor
 			}
 		}
 		
+		# Add in the current page (this is only necessary when the page is being aliased)
+		$currentFilesCurrentPage[] = basename ($this->page);
+		
+		# Add in virtual pages, if any; for instance a virtual page of ^/foo/([^/]+)/index.html$ will create index.html as a name when in /foo/bar/
+		$currentFilesVirtualPages = array ();
+		if ($this->virtualPages) {
+			$this->virtualPages = application::ensureArray ($this->virtualPages);
+			foreach ($this->virtualPages as $virtualPage) {
+				if (substr ($virtualPage, -1) == '$') {$virtualPage = substr ($virtualPage, 0, -1);} // Chop off finalisation terminator
+				$virtualPageDirname = dirname ($virtualPage) . '/';
+				if (ereg ($virtualPageDirname, $this->currentDirectory)) {
+					$virtualPageBasename = basename ($virtualPage);
+					$virtualPageTranslated = $virtualPageBasename;
+					$currentFilesVirtualPages[] = $virtualPageTranslated;
+				}
+			}
+		}
+		
 		# Merge, unique and sort the list
-		$currentFiles = array_merge ($currentFilesLive, $currentFilesStaging);
+		$currentFiles = array_merge ($currentFilesLive, $currentFilesStaging, $currentFilesCurrentPage, $currentFilesVirtualPages);
+		$currentFiles = array_unique ($currentFiles);
 		sort ($currentFiles);
 		
 		# Return the list
@@ -1827,7 +1861,7 @@ class pureContentEditor
 		# Get the current pages for the live and staging areas
 		$currentPages = $this->getCurrentPagesHere ();
 		
-		# Form for the new folder
+		# Form for the new page
 		$form = new form (array (
 			'displayDescriptions'	=> true,
 			'developmentEnvironment' => $this->developmentEnvironment,
@@ -1838,7 +1872,8 @@ class pureContentEditor
 		));
 		
 		# If there is no directory index, state that this is required
-		if (!$this->directoryContainsIndex) {
+		$forceIndexPageCreation = (!$this->directoryContainsIndex && !$this->pageIsBeingAliased);
+		if ($forceIndexPageCreation) {
 			$form->heading ('', "<p class=\"information\">This section currently contains no front page ({$this->directoryIndex}). You are required to create one before proceeding further.</p>");
 		}
 		
@@ -1874,7 +1909,7 @@ class pureContentEditor
 		} else {
 			
 			# Determine if the name should be editable
-			$nameIsEditable = ($this->directoryContainsIndex);
+			$nameIsEditable = (!$forceIndexPageCreation);
 			
 			# Show the guideline text if it's editable
 			if ($nameIsEditable) {
