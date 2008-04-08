@@ -89,7 +89,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.10';
+	var $version = '1.5.11';
 	
 	
 	# Constructor
@@ -3147,9 +3147,9 @@ class pureContentEditor
 		
 		# Define the actions
 		$actions = array (
-			'approve-message'	=> 'Approve it (move to live site) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' ',
+			'approve-message'	=> 'Approve it (move to live site) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' ' . chr (0xe2) . chr (0x80) . chr (0xa0),
 			'approve'			=> 'Approve it (move to live site) but send no message',
-			'reject-message'	=> 'Reject it (and delete the file) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' ',
+			'reject-message'	=> 'Reject it (and delete the file) and ' . (($this->submissions[$filename]['username'] == $this->user) ? 'e-mail myself as a reminder' : 'inform its creator, ' . $this->convertUsername ($this->submissions[$filename]['username'])) . ' ' . chr (0xe2) . chr (0x80) . chr (0xa0),
 			'reject'			=> 'Reject it (and delete the file) but send no message',
 			'edit'				=> "Edit it further now (without sending a message)",
 			'message'			=> 'Only send a message to its creator (add a message below) ',
@@ -3354,6 +3354,7 @@ class pureContentEditor
 		}
 		$this->logChange (($directly ? 'New ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' directly' : "Submitted file $submittedFile approved and") . " saved to $newFileLiveLocation on live site");
 		$newFileLiveLocationChopped = $this->chopDirectoryIndex ($newFileLiveLocation);
+		if ($newFileLiveLocationChopped == '/') {$newFileLiveLocationChopped = '';}
 		if ($this->isBlogMode) {
 			$currentBlogRoot = $this->getCurrentBlogRoot ();
 		}
@@ -3414,6 +3415,10 @@ class pureContentEditor
 	# Wrapper function to send e-mail
 	function sendMail ($users, $message, $subjectSuffix = false, $showMessageOnScreen = true)
 	{
+		# Start an array of users and their names
+		$to = array ();
+		$name = array ();
+		
 		# If the user is actually an e-mail address, assign this directly; otherwise obtain attributes
 		if ($users == $this->serverAdministrator) {
 			$to[] = $this->serverAdministrator;
@@ -3425,6 +3430,7 @@ class pureContentEditor
 			
 			# Get the user's/users' e-mail address and define the From header also
 			foreach ($users as $user) {
+				if (!isSet ($this->users[$user])) {continue;}
 				$to[] = $this->formatEmailAddress ($user);
 				$name[] = $this->users[$user]['Forename'];
 			}
@@ -3445,7 +3451,10 @@ class pureContentEditor
 			$message .= "\n\n\n--\nAuthorised users can log into the pureContentEditor system at {$this->editSiteUrl}/ , using their {$this->authTypeName} username and password.";
 		}
 		
-		#!# At this point, perform check that the to(s) and from exist before trying to send it!
+		# At this point, perform check that the to(s) and from exist before trying to send it!
+		if (!$to) {
+			return true;
+		}
 		
 		# Compile the recipients
 		$recipientList = implode (', ', $to);
@@ -3460,7 +3469,7 @@ class pureContentEditor
 		
 		# Print the message if necessary
 		if ($showMessageOnScreen) {
-			echo "\n<p class=\"success\">The following message has been sent:</p>";
+			echo "\n<p class=\"success\">The following e-mail message has been sent:</p>";
 			echo "\n<blockquote><pre>";
 			echo "\n" . htmlspecialchars ($from);
 			echo "\n<strong>" . wordwrap ('To: ' . htmlspecialchars ($recipientList)) . '</strong>';
@@ -3560,6 +3569,9 @@ class pureContentEditor
 	# Function to get a human-readable username
 	function convertUsername ($user, $withUserId = true, $indicateAdministrator = false)
 	{
+		# Return the username without modification if they have gone
+		if (!isSet ($this->users[$user])) {return $user;}
+		
 		# Return the formatted string
 		return $this->users[$user]['Forename'] . ' ' . $this->users[$user]['Surname'] . ($withUserId ? " ($user)" : '') . (($indicateAdministrator && $this->users[$user]['Administrator']) ? ' [Administrator]' : '');
 	}
