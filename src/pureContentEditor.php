@@ -57,6 +57,7 @@ class pureContentEditor
 		'minimumUsernameLength' => 3,			// Minimum allowable length of a username
 		'databaseTimestampingMode' => '.old',	// Whether to backup old CSV databases with .old ('.old') or a timestamp (true) or not at all (false)
 		'enableAliasingChecks' => true,			// Whether to enable checks for a server-aliased page if a page is not found
+		'allowIndexAliasOverwriting' => true,	// Whether the system will allow the creation of a page that is being aliased
 		'developmentEnvironment' => false,		// Whether to run in development environment mode
 		'hideDirectoryNames' => array ('.AppleDouble', 'Network Trash Folder', 'TheVolumeSettingsFolder'), // Directory names to exclude from directory listings
 		'wordwrapViewedSubmittedHtml' => false,	// Whether to wordwrap submitted HTML in the confirmation display (will not affect the file itself)
@@ -89,7 +90,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.11';
+	var $version = '1.5.12';
 	
 	
 	# Constructor
@@ -1848,8 +1849,17 @@ class pureContentEditor
 	
 	
 	# Function to list current pages (or folders) as a regexp
-	function currentPagesFoldersRegexp ($currentPagesFolders)
+	function currentPagesFoldersRegexp ($currentPagesFolders, $allowIndexAliasOverwriting = false)
 	{
+		# Remove the directory index from the list if it is being aliased and can be 'overwritten'
+		if ($allowIndexAliasOverwriting) {
+			foreach ($currentPagesFolders as $index => $folder) {
+				if ($this->directoryIndex == $folder) {
+					unset ($currentPagesFolders[$index]);
+				}
+			}
+		}
+		
 		# Return the result, returning false if there are none
 		return ($currentPagesFolders ? '^(' . implode ('|', $currentPagesFolders) . ')$' : false);
 	}
@@ -1927,7 +1937,7 @@ class pureContentEditor
 			}
 			
 			# Define a regexp for the current page
-			$currentPagesRegexp = $this->currentPagesFoldersRegexp ($currentPages);
+			$currentPagesRegexp = $this->currentPagesFoldersRegexp ($currentPages, $allowIndexAliasOverwriting = ($this->allowIndexAliasOverwriting && $forceIndexPageCreation));
 			
 			# Hack to get the current page submitted, used for a link if necessary
 			$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlspecialchars ($_POST['form']['new'], ENT_COMPAT, $this->charset) : '');
@@ -3828,5 +3838,7 @@ class pureContentEditor
 # /sitetech/ area editing GUI (for admins)
 # Start/end date should be in user not permission side
 # Consider making administrator rights set as a select box rather than a difficultly-titled checkbox
+# Need to disable the stub file being launched directly, using a check like ($_SERVER['DOCUMENT_ROOT'] . $_SERVER['REQUEST_URI'] == $_SERVER['SCRIPT_FILENAME']) but which takes into account query strings and port switching
+# Find some way round the quirk that an area being limited by IP+Raven says that a username isn't being supplied, unless the user has FIRST logged in elsewhere on the same domain and 'AAForceInteract On' has been added to apache
 
 ?>
