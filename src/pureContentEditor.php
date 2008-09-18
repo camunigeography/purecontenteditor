@@ -90,7 +90,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.12';
+	var $version = '1.5.13';
 	
 	
 	# Constructor
@@ -879,6 +879,9 @@ class pureContentEditor
 	# Function to perform a location match; returns either a string (equating to true) or false
 	function matchLocation ($locations, $test, $determineLocationInUse = false)
 	{
+		# If necessary, set the default for the location in use
+		if ($determineLocationInUse) {$this->locationInUse = false;}
+		
 		# End if no locations
 		if (!$locations) {return false;}
 		
@@ -918,9 +921,6 @@ class pureContentEditor
 				return 'page';	// i.e. true
 			}
 		}
-		
-		# If necessary, set the default for the location in use
-		if ($determineLocationInUse) {$this->locationInUse = false;}
 		
 		# Else return false
 		return false;
@@ -1434,7 +1434,7 @@ class pureContentEditor
 					'name'			=> 'content',
 					'title'					=> 'Title for the section (title file)',
 					'description'	=> "Please capitalise correctly. This is the text that will appear in the breadcrumb trail (the 'You are in...' line) and must not be too long.",
-					'default'			=> $contents,
+					'default'			=> ($pageIsNew ? '' : $contents),
 					'required'				=> true,
 				));
 				break;
@@ -1477,6 +1477,7 @@ class pureContentEditor
 						'editorBasePath'		=> $this->richtextEditorBasePath,
 						'editorToolbarSet'		=> $this->richtextEditorToolbarSet,
 						'editorConfig'			=> array (
+							'CustomConfigurationsPath'	=> $this->richtextEditorBasePath . 'fckconfig-customised.js',
 							'StartupFocus'			=> true,
 							'EditorAreaCSS'			=> $this->richtextEditorEditorAreaCSS,
 							'BaseHref'				=> $this->liveSiteUrl . $this->currentDirectory,	// Adds support for relative images
@@ -1948,7 +1949,7 @@ class pureContentEditor
 				'title'					=> 'New page filename',
 				'description'	=> ($nameIsEditable ? 'Please follow the guidelines above when entering the new filename' : ''),
 				'required'				=> true,
-				'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}.html$",
+				'regexp'				=> "^([a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}.html|\.menu.html|.title.txt)$",
 				'default'  => $newPageName = ($nameIsEditable ? '' : $this->directoryIndex),
 				'editable' => $nameIsEditable,
 				'disallow' => ($currentPages ? array ($currentPagesRegexp => "Sorry, <a href=\"{$pageSubmitted}\">a page of that name</a> already exists, as shown in the list below. Please try another.") : false),
