@@ -54,6 +54,8 @@ class pureContentEditor
 		'pureContentMenuFile' => '.menu.html',	// pureContent menu file name
 		'reviewPagesOpenNewWindow' => false,	// Whether pages for review should open in a new window or not
 		'maximumFileAndFolderNameLength' => 25,	// Maximum number of characters for new files and folders
+		'contentNegotiation' => false,			// Whether to switch on content-negotiation semantics when dealing with filenames
+		'forcePagenameIndex' => false,			// Whether to force the basename of a page to be 'index'
 		'minimumUsernameLength' => 3,			// Minimum allowable length of a username
 		'databaseTimestampingMode' => '.old',	// Whether to backup old CSV databases with .old ('.old') or a timestamp (true) or not at all (false)
 		'enableAliasingChecks' => true,			// Whether to enable checks for a server-aliased page if a page is not found
@@ -90,7 +92,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.13';
+	var $version = '1.5.14';
 	
 	
 	# Constructor
@@ -1927,7 +1929,7 @@ class pureContentEditor
 				$form->heading ('', "
 					<h2>Important guidelines/rules</h2>
 					<ul class=\"spaced\">
-						<li>When creating new pages, only <strong>lowercase alphanumeric characters</strong> are allowed (spaces, underscores and hyphens are not).</li>
+						<li>" . ($this->forcePagenameIndex ? "The page name <strong>must start with <em>index</em></strong>" : "When creating new pages, only <strong>lowercase alphanumeric characters</strong> are allowed (spaces, underscores and hyphens are not).") . "</li>
 						<li>The page name must <strong>end with .html</strong> .</li>
 						<li>The total length (including the suffix .html) can be a <strong>maximum of {$this->maximumFileAndFolderNameLength} characters</strong>.</li>
 						<li>It is important that you think about <strong>permanence</strong> when creating new pages. For instance, if creating a new page to hold phone numbers, don't create a page called 'phonenumbers'; instead, create a page called 'contacts' as that gives more flexibility in the long-run.</li>
@@ -1943,13 +1945,16 @@ class pureContentEditor
 			# Hack to get the current page submitted, used for a link if necessary
 			$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlspecialchars ($_POST['form']['new'], ENT_COMPAT, $this->charset) : '');
 			
+			# Take account of content negotiation semantics for filenames in the regexp
+			$regexp = '^(' . ($this->forcePagenameIndex ? 'index' : '[a-z0-9]') . "{1,{$this->maximumFileAndFolderNameLength}}" . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.html' : '\.html') . '|\.menu' . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.html' : '\.html') . '|\.title' . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.txt' : '\.txt') . ')$';
+			
 			# Page name
 			$form->input (array (
 				'name'			=> 'new',
 				'title'					=> 'New page filename',
 				'description'	=> ($nameIsEditable ? 'Please follow the guidelines above when entering the new filename' : ''),
 				'required'				=> true,
-				'regexp'				=> "^([a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}.html|\.menu.html|.title.txt)$",
+				'regexp'				=> $regexp,
 				'default'  => $newPageName = ($nameIsEditable ? '' : $this->directoryIndex),
 				'editable' => $nameIsEditable,
 				'disallow' => ($currentPages ? array ($currentPagesRegexp => "Sorry, <a href=\"{$pageSubmitted}\">a page of that name</a> already exists, as shown in the list below. Please try another.") : false),
@@ -3841,5 +3846,7 @@ class pureContentEditor
 # Consider making administrator rights set as a select box rather than a difficultly-titled checkbox
 # Need to disable the stub file being launched directly, using a check like ($_SERVER['DOCUMENT_ROOT'] . $_SERVER['REQUEST_URI'] == $_SERVER['SCRIPT_FILENAME']) but which takes into account query strings and port switching
 # Find some way round the quirk that an area being limited by IP+Raven says that a username isn't being supplied, unless the user has FIRST logged in elsewhere on the same domain and 'AAForceInteract On' has been added to apache
+# Find a less destructive way of setting the stylesheet layout for the actions box
+# Set a way of allowing editor/filemanager/connectors/php/config.php  to change $Config['Enabled'] depending on the value of $_SERVER['REMOTE_USER']
 
 ?>
