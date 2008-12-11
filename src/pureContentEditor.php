@@ -92,7 +92,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.14';
+	var $version = '1.5.15';
 	
 	
 	# Constructor
@@ -2180,6 +2180,7 @@ class pureContentEditor
 		echo "\n<p class=\"success\">The user {$result['Forename']} {$result['Surname']} ({$result['Username']}) was successfully added" . ($result['Administrator'] ? ', as an administrator. <a href="/"><strong>Continue.</strong></a>' : ".<br />You may now wish to <a href=\"{$this->page}?permissionGrant={$result['Username']}\"><strong>add permissions for that user</strong></a>.") . '</p>';
 		$message  = "You now have access to the website editing facility. You can log into the pureContentEditor system at {$this->editSiteUrl}/ , using your {$this->authTypeName} username and password. You are recommended to bookmark that address in your web browser.";
 		$message .= "\n\nYour username is: {$result['Username']}";
+		$message .= "\n\nOnce you have logged in, please click on the 'Tips/help' button to see some useful tips.";
 		$message .= "\n\n" . ($result['Administrator'] ? 'You have been granted administrative rights, so you have editable access across the site rather than access to particular areas. You can also create/administer users and permissions.' : 'You will be separately advised of the area(s) of the site which you have permission to alter.');
 		$message .= ($result['message'] ? "\n\n{$result['message']}" : '');
 		$this->sendMail ($result['Username'], $message, $subjectSuffix = 'you now have access');
