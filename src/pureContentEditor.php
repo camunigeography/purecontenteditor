@@ -84,15 +84,17 @@ class pureContentEditor
 		'bodyAttributes'	=> true, 	// Whether to apply body attributes to the editing area
 		'charset'							=> 'UTF-8',		# Encoding used in entity conversions; www.joelonsoftware.com/articles/Unicode.html is worth a read
 		'tipsUrl'				=> 'http://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf',	// Location of tip sheet
+		'helpNewWindow'				=> false,	// Whether the help page should open in a new window
 		'makeLiveDefaultChecked' => true,	// Whether the 'make live by default' option should be checked by default
 		'leaveLink'	=> false,		// Whether to add a link for 'leave editing mode'
+		'nofixTag'	=> '<!-- nofix -->',	// Special marker which indicates that the HTML should not be cleaned (or false to disable)
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.5.15';
+	var $version = '1.6.0';
 	
 	
 	# Constructor
@@ -1094,6 +1096,7 @@ class pureContentEditor
 				'tooltip' => 'Tip sheet and other help tips, as well as information about this system',
 				'administratorsOnly' => false,
 				'grouping' => 'Additional',
+				'url' => $this->page . '?help' . ($this->helpNewWindow ? '" target="_blank' : ''),
 			),
 			
 			'logout' => array (
@@ -1316,6 +1319,7 @@ class pureContentEditor
 		$html .= "\n" . "<p><a href=\"{$this->tipsUrl}\" target=\"_blank\"><strong>Help/tips on using the editor</strong></a> are available.</p>";
 		$html .= "\n<h2>Richtext editor user guide</h2>";
 		$html .= "\n" . "<p>There is also a comprehensive <a href=\"http://docs.fckeditor.net/FCKeditor_2.x/Users_Guide\" target=\"_blank\">user guide for the Microsoft Word-style editor part</a> of the system (the richtext editor).</p>";
+		$html .= "\n" . "<p>The HTML submitted in a richtext field will be cleaned on submission. If you don't want this to happen, go into source mode, and add to the <strong>start</strong>, the following: " . htmlspecialchars ($this->nofixTag) . '</p>';
 		$html .= "\n<h2>Requirements</h2>";
 		$html .= "\n" . '<p>Most modern browsers, as <a href="http://www.fckeditor.net/" target="external">listed at fckeditor.net</a>, are supported.</p>';
 		$html .= "\n<p>If your browser has a popup blocker, this must be disabled for this site.</p>";
@@ -1492,6 +1496,7 @@ class pureContentEditor
 						'directoryIndex' 		=> $this->directoryIndex,			// Default directory index name
 						'imageAlignmentByClass'	=> $this->imageAlignmentByClass,	// Replace align="foo" with class="foo" for images
 						'replacements'			=> $replacements,
+						'nofixTag'				=> $this->nofixTag,
 						'disallow'				=> ($this->allImagesRequireAltText ? array ('<img ([^>]*)alt=""([^>]*)>' => 'All images must have alternative text supplied, for accessibility reasons. Please correct this by right-clicking on the image, selecting \'Image Properties\' and entering a description of the image in the field marked \'Alternative Text\'.') : false),	// Images without alternative text
 					));
 				}
@@ -1829,6 +1834,7 @@ class pureContentEditor
 		if (!$currentResources) {return false;}
 		
 		# Add links to each, adding a slash if the resource type is folders
+		$currentResourcesLinked = array ();
 		foreach ($currentResources as $resource) {
 			
 			# Add a slash if the resource is the folder type
@@ -1845,6 +1851,9 @@ class pureContentEditor
 			#!# Ideally get the title, but this means working out which file (live or staging) to open
 			$currentResourcesLinked[] = "<a href=\"$link\">$resource</a>";
 		}
+		
+		# End if none
+		if (!$currentResourcesLinked) {return false;}
 		
 		# Construct and return the HTML
 		return $html = "\n<p id=\"information\">The following are the " . (($this->isBlogTreeRoot && $type == 'folders') ? 'blogs' : $type) . ($type == 'postings' ? ' in this blog' : ' which currently exist in this area') . ':</p>' . application::htmlUl ($currentResourcesLinked);
@@ -2113,6 +2122,14 @@ class pureContentEditor
 			$form->heading ('', '<p class="information">There are currently no users. You are required to create a new administrative user on first login. Please enter your details.</p>');
 		}
 		
+		# Create a list of current users; if the Source field exists, users can only be added if they are a lookup user (so list only local users)
+		$users = array ();
+		foreach ($this->users as $user => $attributes) {
+			if (!isSet ($attributes['Source']) || ($attributes['Source'] != 'Lookup (database)')) {
+				$users[] = $user;
+			}
+		}
+		
 		# Widgets
 		$form->input (array (
 		    'name'            => 'Username',
@@ -2123,6 +2140,7 @@ class pureContentEditor
 		    'maxlength'                => 10,
 			'default' => ($firstRun ? $this->user : ''),
 			'regexp'				=> "^[a-z0-9]{{$this->minimumUsernameLength},}$",
+			'current' => $users,
 		));
 		$form->email (array (
 		    'name'            => 'E-mail',
@@ -2152,14 +2170,6 @@ class pureContentEditor
 		
 		# Show the form and get any results or end here
 		if (!$result = $form->process ()) {return;}
-		
-		# If the user is already in the local database, end here
-		if (isSet ($this->users[$result['Username']])) {
-			if (!$this->lookup || ($this->lookup && ($this->users[$result['Username']]['source'] == 'Lookup (database)'))) {
-				echo "\n<p class=\"failure\">The user {$result['Username']} already exists and so was not added.</p>";
-				return false;
-			}
-		}
 		
 		# Flatten the checkbox result
 		$result['Administrator'] = ($firstRun ? true : ($result['Administrator'][$makeAdministratorText] ? '1' : '0'));
@@ -2465,8 +2475,12 @@ class pureContentEditor
 		if ($this->permissions) {
 			foreach ($this->permissions as $key => $attributes) {
 				if ($excludeLookupUsers && isSet ($attributes['Source']) && ($attributes['Source'] == 'Lookup (database)')) {continue;}
-				$userAttributes = $this->users[$attributes['Username']];
-				$permissions[$key] = "{$attributes['Username']} ({$userAttributes['Forename']} {$userAttributes['Surname']}): " . $attributes['Location'];
+				$name = '';
+				if (isSet ($this->users[$attributes['Username']])) {
+					$userAttributes = $this->users[$attributes['Username']];
+					$name = " ({$userAttributes['Forename']} {$userAttributes['Surname']})";
+				}
+				$permissions[$key] = "{$attributes['Username']}{$name}: " . $attributes['Location'];
 			}
 		}
 		
@@ -2922,7 +2936,7 @@ class pureContentEditor
 	function formatDateLimitation ($start, $end)
 	{
 		# If no start and end, return an empty string
-		if (!$start && !$end) {return '(No date limitation)';}
+		if (!$start && !$end) {return '<span class="comment">-</span>';}
 		
 		# Otherwise construct the string
 		return $this->formatSqlDate ($start) .  ' to<br />' . $this->formatSqlDate ($end);
@@ -3609,7 +3623,7 @@ class pureContentEditor
 		
 		# Add titles to each
 		foreach ($files as $file => $attributes) {
-			$files[$file]['title'] = $this->getTitle ($file);
+			$files[$file]['title'] = htmlspecialchars ($this->getTitle ($file));
 		}
 		
 		# Return the list
@@ -3841,7 +3855,7 @@ class pureContentEditor
 # Have a single 'master' port so that links are correct when running off two ports at once (or sort out /login ...)
 # Messaging facility should state which page the message is being sent on
 # Change all file writes so that writability check is done in setup, removing the need for error reporting
-# † sometimes not being escaped properly
+#  sometimes not being escaped properly
 # /sitetech/ area editing GUI (for admins)
 # Start/end date should be in user not permission side
 # Consider making administrator rights set as a select box rather than a difficultly-titled checkbox
