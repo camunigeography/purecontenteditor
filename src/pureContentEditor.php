@@ -94,7 +94,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.0';
+	var $version = '1.6.1';
 	
 	
 	# Constructor
@@ -3436,6 +3436,9 @@ class pureContentEditor
 		# If there is provide information, add this
 		if ($privateInfo) {$message .= "\n\nAdditional diagnostic information:\n" . $privateInfo;}
 		
+		# Add the current page
+		$message .= "\n\n\nThis message was generated from the following URL:\n" . $_SERVER['_PAGE_URL'];
+		
 		# Send the mail
 		if ($this->sendMail ($this->serverAdministrator, $message, $subjectSuffix = (count ($errors) == 1 ? 'error' : 'errors') . ' occured - please investigate', $showMessageOnScreen = false)) {
 			echo '<p class="information">The server administrator has been informed about ' . (count ($errors) == 1 ? 'this error' : 'these errors') . '.</p>';
@@ -3444,7 +3447,7 @@ class pureContentEditor
 	
 	
 	# Wrapper function to send e-mail
-	function sendMail ($users, $message, $subjectSuffix = false, $showMessageOnScreen = true)
+	function sendMail ($users, $message, $subjectSuffix = false, $showMessageOnScreen = true, $includeUrl = false)
 	{
 		# Start an array of users and their names
 		$to = array ();
@@ -3479,6 +3482,7 @@ class pureContentEditor
 			# Add the user's name to the message, the signature, and login details
 			$message  = "\nDear " . $nameMessage . ",\n\n" . $message;
 			$message .= "\n\n\n" . $this->messageSignatureGreeting . "\n" . $this->convertUsername ($this->user);
+			if ($includeUrl) {$message .= "\n\n\nMessage sent from page:\n" . $_SERVER['_PAGE_URL'];}
 			$message .= "\n\n\n--\nAuthorised users can log into the pureContentEditor system at {$this->editSiteUrl}/ , using their {$this->authTypeName} username and password.";
 		}
 		
@@ -3803,7 +3807,7 @@ class pureContentEditor
 		if (!$result = $form->process ()) {return false;}
 		
 		# Send the message
-		$this->sendMail ($result['username'], $result['message'], $subjectSuffix = 'message');
+		$this->sendMail ($result['username'], $result['message'], $subjectSuffix = 'message', true, $includeUrl = true);
 	}
 }
 
