@@ -94,7 +94,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.1';
+	var $version = '1.6.2';
 	
 	
 	# Constructor
@@ -1482,6 +1482,7 @@ class pureContentEditor
 						'default'				=> $contents,
 						'editorBasePath'		=> $this->richtextEditorBasePath,
 						'editorToolbarSet'		=> $this->richtextEditorToolbarSet,
+						'CKFinder'				=> $this->CKFinder,					// Whether to use the CKFinder plugin
 						'editorConfig'			=> array (
 							'CustomConfigurationsPath'	=> $this->richtextEditorBasePath . 'fckconfig-customised.js',
 							'StartupFocus'			=> true,
@@ -1489,8 +1490,11 @@ class pureContentEditor
 							'BaseHref'				=> $this->liveSiteUrl . $this->currentDirectory,	// Adds support for relative images
 							'BodyId'			=> ($this->bodyAttributes ? pureContent::bodyAttributesId () : false),
 							'BodyClass'			=> ($this->bodyAttributes ? pureContent::bodyAttributesClass () : false),
+							'CKFinderAccessControl'	=> $this->cKFinderAccessControl (),	// Access Control List (ACL) passed to CKFinder in the format it requires
+							#!# Ideally, various items at http://docs.fckeditor.net/CKFinder/Developers_Guide/PHP/Integration#Properties would be settable, i.e.
+							### DisableThumbnailSelection, StartupPath, StartupFolderExpanded
+							//'CKFinderStartupPath'	=> false,		// CKFinder startup path, or false to disable
 						),
-						'CKFinder'				=> $this->CKFinder,					// Whether to use the CKFinder plugin
 						'protectEmailAddresses' => $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
 						'externalLinksTarget'	=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
 						'directoryIndex' 		=> $this->directoryIndex,			// Default directory index name
@@ -1594,6 +1598,122 @@ class pureContentEditor
 			$this->logChange ("Template " . ($this->isBlogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
 			echo "\n<p class=\"success\">The template from which this new " . ($this->isBlogMode ? 'blog posting' : 'page') . " was created has been deleted from the filestore.</p>";
 		}
+	}
+	
+	
+	# Function to provide an access Control List (ACL) to be passed to CKFinder in the format it requires
+	function cKFinderAccessControl ()
+	{
+		# End if not using CKFinder
+		if (!$this->CKFinder) {return false;}
+		
+		# Get the current user's permissions
+		if ($this->userIsAdministrator) {
+			$currentUserPermissions = array ('/*');
+		} else {
+			$currentUserPermissions = $this->convertPermissionsList ($this->currentUserPermissions, true);
+		}
+		
+		# Define default read-only rights
+		$defaultRights = array (
+			'role' => '*',
+			'resourceType' => '*',
+			'folder' => '/',
+			
+			'folderView' => true,
+			'folderCreate' => false,
+			'folderRename' => false,
+			'folderDelete' => false,
+			
+			'fileView' => true,
+			'fileUpload' => false,
+			'fileRename' => false,
+			'fileDelete' => false,
+		);
+		
+		# Loop through each permission
+		foreach ($currentUserPermissions as $location) {
+			
+			# Deal with the three cases of /, /*, /filename.html
+			$treeRights = false;
+			switch (substr ($location, -1)) {
+				case '*':
+					$location = substr ($location, 0, -1);	// Chop off the *
+					$treeRights = true;
+					break;
+				case '/':
+					
+					break;
+				default:
+					$location = dirname ($location) . '/';	// Chop off the filename
+					break;
+			}
+			
+			# Skip if the location is already covered, i.e. there is an overlapping right
+			if (isSet ($cKFinderAccessControl[$location])) {continue;}
+			
+			# Add this permission
+			$cKFinderAccessControl[$location] = array (
+				'role' => '*',
+				'resourceType' => '*',
+				'folder' => $location,
+				
+				'folderView' => true,
+				'folderCreate' => $treeRights,
+				'folderRename' => false,	// This is a broken model - it works differently to the Unix model, which means that renaming only applies to contained items, not the container itself plus tree
+				'folderDelete' => false,	// Ditto broken model
+				
+				'fileView' => true,
+				'fileUpload' => true,
+				'fileRename' => true,
+				'fileDelete' => true,
+			);
+			
+			# If tree rights, add the child privileges
+			if ($treeRights) {
+				if ($childFolders = directories::listContainedDirectories ($this->liveSiteRoot . $location)) {
+					foreach ($childFolders as $folder) {
+						
+						# Skip specific folders
+						if (($folder == '_thumbnails') || ($folder == 'sitetech')) {continue;}
+						
+						# Define the folder name
+						$folder = $location . $folder . '/';
+						
+						# Skip if the location is already covered, i.e. there is an overlapping right; pureContentEditor assigns higher permissions first
+						if (isSet ($cKFinderAccessControl[$folder])) {continue;}
+						
+						# Add child permissions
+						$cKFinderAccessControl[$folder] = array (
+							'role' => '*',
+							'resourceType' => '*',
+							'folder' => $folder,
+							
+							'folderView' => true,
+							'folderCreate' => true,
+							'folderRename' => true,
+							'folderDelete' => true,
+							
+							'fileView' => true,
+							'fileUpload' => true,
+							'fileRename' => true,
+							'fileDelete' => true,
+						);
+					}
+				}
+			}
+		}
+		
+		# Add read-only access across the entire site if a specific permission hasn't already been set
+		if (!isSet ($cKFinderAccessControl['/'])) {
+			$cKFinderAccessControl['/'] = $defaultRights;
+		}
+		
+		//application::dumpData ($currentUserPermissions);
+		//application::dumpData ($cKFinderAccessControl);
+		
+		# Return the ACL
+		return $cKFinderAccessControl;
 	}
 	
 	
@@ -2876,13 +2996,18 @@ class pureContentEditor
 	
 	
 	# Function to convert a list of permissions into a list of areas
-	function convertPermissionsList ($permissions)
+	function convertPermissionsList ($permissions, $keysOnly)
 	{
 		# Loop through the permissions
 		$readablePermissions = array ();
 		foreach ($permissions as $permission) {
 			$location = $this->permissions[$permission]['Location'];
 			$readablePermissions[$location] = $this->convertPermission ($location);
+		}
+		
+		# If only array keys are required, return that
+		if ($readablePermissions) {
+			$readablePermissions = array_keys ($readablePermissions);
 		}
 		
 		# Return the list
@@ -3819,6 +3944,7 @@ class pureContentEditor
 #!# Audit the use of relative links
 #!# Enable user to be able to save pages directly without approval
 #!# Checking writability needs to be done on the proposed file, NOT at top level
+#!# Prevent overlapping permissions, e.g. /foo/ being created when /foo/* exists or /* exists, rather than using the ksort in permissions()
 
 
 ### Potential future development suggestions:
