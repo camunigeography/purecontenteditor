@@ -94,7 +94,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.2';
+	var $version = '1.6.3';
 	
 	
 	# Constructor
@@ -1920,6 +1920,7 @@ class pureContentEditor
 		}
 		
 		# Add in the current page (this is only necessary when the page is being aliased)
+		#!# This seems to be causing blog page addition breakage, or somewhere else in this function is - says the page already exists when it doesn't
 		$currentFilesCurrentPage[] = basename ($this->page);
 		
 		# Add in virtual pages, if any; for instance a virtual page of ^/foo/([^/]+)/index.html$ will create index.html as a name when in /foo/bar/
@@ -2042,7 +2043,7 @@ class pureContentEditor
 			
 			# Check for an existing same entry
 			if ($unfinalisedData = $form->getUnfinalisedData ()) {
-				$proposedLocation = $this->newBlogPostingLocation ("{$unfinalisedData['date']['year']}-{$unfinalisedData['date']['month']}-{$unfinalisedData['date']['day']}", $unfinalisedData['summary'], $addIndex = false);
+				$proposedLocation = $this->newBlogPostingLocation ($unfinalisedData['date'], $unfinalisedData['summary'], $addIndex = false);
 				if ($currentPages = $this->getCurrentPagesHere ($proposedLocation)) {
 					$form->registerProblem ('postingexists', "A posting of that name and date <a href=\"{$proposedLocation}\">already exists</a> - please rename, or edit the existing posting if relevant.");
 				}
@@ -2747,11 +2748,9 @@ class pureContentEditor
 		
 		# Check the key is not already in the database
 		if ($unfinalisedData = $form->getUnfinalisedData ()) {
-			if (isSet ($unfinalisedData['username'][0]) && isSet ($unfinalisedData['scope'][0])) {
-				$key = "{$unfinalisedData['username'][0]}:{$unfinalisedData['scope'][0]}";
-				if (isSet ($this->permissions[$key])) {
-					$form->registerProblem ('permissionexists', "The permission for user <em>{$unfinalisedData['username'][0]}</em> to amend <em>{$unfinalisedData['scope'][0]}</em> already exists.");
-				}
+			$key = "{$unfinalisedData['username']}:{$unfinalisedData['scope']}";
+			if (isSet ($this->permissions[$key])) {
+				$form->registerProblem ('permissionexists', "The permission for user <em>{$unfinalisedData['username']}</em> to amend <em>{$unfinalisedData['scope']}</em> already exists.");
 			}
 		}
 		
@@ -2797,11 +2796,8 @@ class pureContentEditor
 			if ($unfinalisedData['Startdate'] && $unfinalisedData['Enddate']) {
 				
 				# Assemble the start & end dates as a number (this would normally be done in ultimateForm in the post-unfinalised data processing section
-				$startDate = $unfinalisedData['Startdate']['year'] . $unfinalisedData['Startdate']['month'] . ($unfinalisedData['Startdate']['day'] ? sprintf ('%02s', $unfinalisedData['Startdate']['day']) : '');
-				$endDate = $unfinalisedData['Enddate']['year'] . $unfinalisedData['Enddate']['month'] . ($unfinalisedData['Enddate']['day'] ? sprintf ('%02s', $unfinalisedData['Enddate']['day']) : '');
-				
-				# End if no start date or end date
-				if (!$endDate || !$startDate) {return;}
+				$startDate = (int) str_replace ('-', '', $unfinalisedData['Startdate']);
+				$endDate = (int) str_replace ('-', '', $unfinalisedData['Enddate']);
 				
 				# Check that the start (and thereby the end date) are after the current date
 				if ($startDate < date ('Ymd')) {
@@ -3196,8 +3192,8 @@ class pureContentEditor
 		
 		# Check the username matches; note that a >validation can't be used as the 'key' field is in a special format that requires the username to be extracted first
 		if ($unfinalisedData = $form->getUnfinalisedData ()) {
-			if ($unfinalisedData['key'] && isSet ($unfinalisedData['key'][0])) {
-				list ($username, $scope) = explode (':', $unfinalisedData['key'][0], 2);
+			if ($unfinalisedData['key']) {
+				list ($username, $scope) = explode (':', $unfinalisedData['key'], 2);
 				if (($unfinalisedData['username']) && ($username != $unfinalisedData['username'])) {
 					$form->registerProblem ('mismatch', 'The usernames you entered did not match.');
 				}
