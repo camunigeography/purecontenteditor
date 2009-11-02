@@ -94,7 +94,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.3';
+	var $version = '1.6.4';
 	
 	
 	# Constructor
@@ -2992,7 +2992,7 @@ class pureContentEditor
 	
 	
 	# Function to convert a list of permissions into a list of areas
-	function convertPermissionsList ($permissions, $keysOnly)
+	function convertPermissionsList ($permissions, $keysOnly = false)
 	{
 		# Loop through the permissions
 		$readablePermissions = array ();
@@ -3002,7 +3002,7 @@ class pureContentEditor
 		}
 		
 		# If only array keys are required, return that
-		if ($readablePermissions) {
+		if ($keysOnly) {
 			$readablePermissions = array_keys ($readablePermissions);
 		}
 		
