@@ -94,7 +94,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.4';
+	var $version = '1.6.5';
 	
 	
 	# Constructor
@@ -248,7 +248,12 @@ class pureContentEditor
 		$this->editSiteUrl = "{$this->editHostScheme}://{$this->editHostName}" . ($this->editHostPort != 80 ? ":{$this->editHostPort}" : '');
 		
 		# Ensure the URL is correct, i.e. the editing facility is not being run through an unauthorised location
-		if (($_SERVER['_SERVER_PROTOCOL_TYPE'] != $this->editHostScheme) || ($_SERVER['SERVER_NAME'] != $this->editHostName) || ($_SERVER['SERVER_PORT'] != $this->editHostPort)) {$setupErrors[] = 'The editing facility must be run from the URL specified in the settings.';}
+		$httpHost = $_SERVER['HTTP_HOST'];
+		if (substr_count ($_SERVER['HTTP_HOST'], ':')) {
+			$hostAndPort = explode (':', $_SERVER['HTTP_HOST']);
+			$httpHost = $hostAndPort[0];
+		}
+		if (($_SERVER['_SERVER_PROTOCOL_TYPE'] != $this->editHostScheme) || ($this->editHostName != $httpHost) || ($_SERVER['SERVER_PORT'] != $this->editHostPort)) {$setupErrors[] = 'The editing facility must be run from the URL specified in the settings.';}
 		
 		# Check that the server is defining a remote user
 		if (!$this->user) {$setupErrors[] = 'The server did not supply a username, so the editing facility is unavailable.';}
@@ -2054,7 +2059,7 @@ class pureContentEditor
 			# Determine if the name should be editable
 			$nameIsEditable = (!$forceIndexPageCreation);
 			
-			# Show the guideline text if it's editable
+			# Show the guideline text if it's editable
 			if ($nameIsEditable) {
 				$form->heading ('', "
 					<h2>Important guidelines/rules</h2>
