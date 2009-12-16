@@ -60,7 +60,6 @@ class pureContentEditor
 		'databaseTimestampingMode' => '.old',	// Whether to backup old CSV databases with .old ('.old') or a timestamp (true) or not at all (false)
 		'enableAliasingChecks' => true,			// Whether to enable checks for a server-aliased page if a page is not found
 		'allowIndexAliasOverwriting' => true,	// Whether the system will allow the creation of a page that is being aliased
-		'developmentEnvironment' => false,		// Whether to run in development environment mode
 		'hideDirectoryNames' => array ('.AppleDouble', 'Network Trash Folder', 'TheVolumeSettingsFolder'), // Directory names to exclude from directory listings
 		'wordwrapViewedSubmittedHtml' => false,	// Whether to wordwrap submitted HTML in the confirmation display (will not affect the file itself)
 		'bannedLocations' => array (),			// List of banned locations where pages/folders cannot be created (even by an administrator) and which will not be listed
@@ -94,7 +93,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.5';
+	var $version = '1.6.6';
 	
 	
 	# Constructor
@@ -238,11 +237,6 @@ class pureContentEditor
 		
 		# Ensure that file uploads are enabled
 		if (!ini_get ('file_uploads')) {$setupErrors[] = 'File uploading is not enabled - please ensure this is enabled in the server configuration.';}
-		
-		# Set PHP parameters
-		ini_set ('error_reporting', 2047);
-		ini_set ('display_errors', $this->developmentEnvironment);
-		ini_set ('log_errors', !$this->developmentEnvironment);
 		
 		# Construct the edit site and live site URL
 		$this->editSiteUrl = "{$this->editHostScheme}://{$this->editHostName}" . ($this->editHostPort != 80 ? ":{$this->editHostPort}" : '');
@@ -1401,7 +1395,6 @@ class pureContentEditor
 		
 		# Create the form itself
 		$form = new form (array (
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'name' => 'purecontent',
 			'displayTitles' => ($this->typeOfFile == 'titleFile'),
 			'displayDescriptions' => ($this->typeOfFile == 'titleFile'),
@@ -1776,7 +1769,6 @@ class pureContentEditor
 		# Form for the new folder
 		$form = new form (array (
 			'displayDescriptions'	=> true,
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions'	=> false,
 			'formCompleteText'	=> false,
 			'submitButtonText'		=> 'Create new section (folder)',
@@ -2012,7 +2004,6 @@ class pureContentEditor
 		# Form for the new page
 		$form = new form (array (
 			'displayDescriptions'	=> true,
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions'	=> false,
 			'formCompleteText'	=> false,
 			'submitButtonText'		=> ($this->isBlogMode ? 'Create new blog posting' : 'Create new page'),
@@ -2059,7 +2050,7 @@ class pureContentEditor
 			# Determine if the name should be editable
 			$nameIsEditable = (!$forceIndexPageCreation);
 			
-			# Show the guideline text if it's editable
+			# Show the guideline text if it's editable
 			if ($nameIsEditable) {
 				$form->heading ('', "
 					<h2>Important guidelines/rules</h2>
@@ -2236,7 +2227,6 @@ class pureContentEditor
 	{
 		# Create the form itself
 		$form = new form (array (
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
 			'formCompleteText' => false,
@@ -2348,7 +2338,6 @@ class pureContentEditor
 		
 		# Create the form itself
 		$form = new form (array (
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
 			'formCompleteText' => false,
@@ -2445,7 +2434,6 @@ class pureContentEditor
 		
 		# Create the form itself
 		$form = new form (array (
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
 			'formCompleteText' => false,
@@ -2706,7 +2694,6 @@ class pureContentEditor
 		
 		# Create the form itself
 		$form = new form (array (
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
 			'formCompleteText' => false,
@@ -2854,7 +2841,6 @@ class pureContentEditor
 		
 		# Create the form itself
 		$form = new form (array (
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
 			'formCompleteText' => false,
@@ -3168,7 +3154,6 @@ class pureContentEditor
 		
 		# Create the form itself
 		$form = new form (array (
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'displayRestrictions' => false,
 			'name' => __FUNCTION__,
 			'formCompleteText' => false,
@@ -3289,7 +3274,6 @@ class pureContentEditor
 		
 		# Create the form itself
 		$form = new form (array (
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'submitButtonText' => 'Take action',
 			'formCompleteText' => false,
 		));
@@ -3909,7 +3893,6 @@ class pureContentEditor
 		
 		# Create the form itself
 		$form = new form (array (
-			'developmentEnvironment' => $this->developmentEnvironment,
 			'submitButtonText' => 'Send message',
 			'displayDescriptions' => false,
 			'formCompleteText' => false,
