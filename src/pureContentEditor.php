@@ -87,13 +87,14 @@ class pureContentEditor
 		'makeLiveDefaultChecked' => true,	// Whether the 'make live by default' option should be checked by default
 		'leaveLink'	=> false,		// Whether to add a link for 'leave editing mode'
 		'nofixTag'	=> '<!-- nofix -->',	// Special marker which indicates that the HTML should not be cleaned (or false to disable)
+		'nameInEmail' => true,	// Whether e-mail should be formatted as Name <address@domain> or just address@domain
 	);
 	
 	# Specify the minimum version of PHP required
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.6';
+	var $version = '1.6.7';
 	
 	
 	# Constructor
@@ -3639,7 +3640,7 @@ class pureContentEditor
 		
 		# Construct the string, surrounding it with the name if on a non-Windows platform
 		$string = $attributes['E-mail'];
-		if (PHP_OS != 'WINNT') {
+		if ((PHP_OS != 'WINNT') && $this->nameInEmail) {
 			$string = "\"{$attributes['Forename']} {$attributes['Surname']}\" <{$string}>";
 		}
 		
