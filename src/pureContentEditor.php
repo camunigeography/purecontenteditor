@@ -94,7 +94,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.7';
+	var $version = '1.6.8';
 	
 	
 	# Constructor
@@ -3567,7 +3567,7 @@ class pureContentEditor
 		# If the user is actually an e-mail address, assign this directly; otherwise obtain attributes
 		if ($users == $this->serverAdministrator) {
 			$to[] = $this->serverAdministrator;
-			$from = 'From: ' . $this->serverAdministrator;
+			$fromHeader = 'From: ' . $this->serverAdministrator;
 		} else {
 			
 			# Loop through each user supplied
@@ -3579,7 +3579,7 @@ class pureContentEditor
 				$to[] = $this->formatEmailAddress ($user);
 				$name[] = $this->users[$user]['Forename'];
 			}
-			$from = 'From: ' . $this->formatEmailAddress ($this->user);
+			$fromHeader = 'From: ' . $this->formatEmailAddress ($this->user);
 			
 			# Compile the name (commas between, except for 'and' between last two if there is more than one
 			$nameMessage = '';
@@ -3607,8 +3607,7 @@ class pureContentEditor
 		
 		# Send the mail; ensure the editSiteUrl is set (it may not be if this function is being thrown by reportErrors ()
 		$subject = ($this->websiteName ? $this->websiteName : $this->liveSiteUrl) . ' website editing facility' . ($subjectSuffix ? ': ' . $subjectSuffix : '');
-		#!# Mail sending needs to be in UTF-8 if selected; umlauts and accents fail to transmit correctly in the From: line
-		if (!mail ($recipientList, $subject, wordwrap ($message), $from)) {
+		if (!application::utf8Mail ($recipientList, $subject, wordwrap ($message), $fromHeader)) {
 			echo "\n<p class=\"failure\">There was a problem sending an e-mail to the user.</p>";
 			return false;
 		}
@@ -3617,7 +3616,7 @@ class pureContentEditor
 		if ($showMessageOnScreen) {
 			echo "\n<p class=\"success\">The following e-mail message has been sent:</p>";
 			echo "\n<blockquote><pre>";
-			echo "\n" . htmlspecialchars ($from);
+			echo "\n" . htmlspecialchars ($fromHeader);
 			echo "\n<strong>" . wordwrap ('To: ' . htmlspecialchars ($recipientList)) . '</strong>';
 			echo "\n" . wordwrap ('Subject: ' . htmlspecialchars ($subject)) . '</strong>';
 			echo "\n\n" . wordwrap (htmlspecialchars ($message));
@@ -3641,7 +3640,7 @@ class pureContentEditor
 		# Construct the string, surrounding it with the name if on a non-Windows platform
 		$string = $attributes['E-mail'];
 		if ((PHP_OS != 'WINNT') && $this->nameInEmail) {
-			$string = "\"{$attributes['Forename']} {$attributes['Surname']}\" <{$string}>";
+			$string = "{$attributes['Forename']} {$attributes['Surname']} <{$string}>";
 		}
 		
 		# Return the string
