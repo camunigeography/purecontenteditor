@@ -94,7 +94,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.8';
+	var $version = '1.6.9';
 	
 	
 	# Constructor
@@ -1974,8 +1974,19 @@ class pureContentEditor
 		# End if none
 		if (!$currentResourcesLinked) {return false;}
 		
-		# Construct and return the HTML
-		return $html = "\n<p id=\"information\">The following are the " . (($this->isBlogTreeRoot && $type == 'folders') ? 'blogs' : $type) . ($type == 'postings' ? ' in this blog' : ' which currently exist in this area') . ':</p>' . application::htmlUl ($currentResourcesLinked);
+		# Construct the HTML, splitting into a multi-column layout if there are a lot of items
+		$html  = "\n<p id=\"information\">The following are the " . (($this->isBlogTreeRoot && $type == 'folders') ? 'blogs' : $type) . ($type == 'postings' ? ' in this blog' : ' which currently exist in this area') . ':</p>';
+		if (count ($currentResourcesLinked) <= 40) {
+			$html .= application::htmlUl ($currentResourcesLinked);
+		} else {
+			foreach ($currentResourcesLinked as $index => $item) {
+				$currentResourcesLinked[$index] = '<li>' . $item . '</li>';
+			}
+			$html .= application::splitListItems ($currentResourcesLinked, 3);
+		}
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
