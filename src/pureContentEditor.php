@@ -1,7 +1,5 @@
 <?php
 
-
-
 /**
  * A class to create an editing facility on top of a pureContent-enabled site
  * 
@@ -94,7 +92,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.9';
+	var $version = '1.6.10';
 	
 	
 	# Constructor
@@ -1388,9 +1386,30 @@ class pureContentEditor
 	}
 */
 	
+	
+	# Function to determine whether a location is potentially writable; for instance, if a file would need to go at /path/to/foo/index.html and /path/to/ was all that existed, then the check would be for writability of /path/to/
+	function treesPotentiallyWritable ($location)
+	{
+		# Do the check for each of the roots
+		$roots = array ($this->filestoreRoot, $this->liveSiteRoot);
+		foreach ($roots as $root) {
+			if (!application::directoryIsWritable ($location, $root . '/')) {
+				$this->reportErrors ('Unfortunately, the operation failed - the filestore is not set up properly.', "The path to {$root}{$location} is not writable.");
+				return false;
+			}
+		}
+		
+		# Return success, as all roots have a writeable path within them
+		return true;
+	}
+	
+	
 	# Function to edit the page
 	function edit ()
 	{
+		# Ensure that the tree is writable, or end
+		if (!$this->treesPotentiallyWritable ($this->currentDirectory)) {return false;}
+		
 		# Start the HTML, enclosing it in a div for CSS styling purposes, echoing it directly because of the form
 		echo "\n\n<div id=\"editor\">";
 		
@@ -2010,6 +2029,9 @@ class pureContentEditor
 	# Function to create a new page
 	function newPage ()
 	{
+		# Ensure that the tree is writable, or end
+		if (!$this->treesPotentiallyWritable ($this->currentDirectory)) {return false;}
+		
 		# Get the current pages for the live and staging areas
 		$currentPages = $this->getCurrentPagesHere ();
 		
@@ -3278,11 +3300,8 @@ class pureContentEditor
 			return;
 		}
 		
-		# Check that the live directory is writable before offering options
-		if (!application::directoryIsWritable ($this->liveSiteRoot, $this->currentDirectory)) {
-			$this->reportErrors ('It is not currently possible to write files to the live site. The administrator needs to fix the permissions first.', "The folder in question is {$this->liveSiteRoot}{$this->currentDirectory} on the live site.");
-			return false;
-		}
+		# Ensure that the tree is writable, or end
+		if (!$this->treesPotentiallyWritable ($this->currentDirectory)) {return false;}
 		
 		# Create the form itself
 		$form = new form (array (
