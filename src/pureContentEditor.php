@@ -92,7 +92,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.10';
+	var $version = '1.6.11';
 	
 	
 	# Constructor
@@ -2806,7 +2806,8 @@ class pureContentEditor
 		
 		# Signal success
 		echo "\n<p class=\"success\">The permission {$result['scope']} for the user {$result['username']} was successfully added.</p>";
-		$this->sendMail ($result['username'], "You have been granted permission to make changes to " . $this->convertPermission ($result['scope'], $descriptions = true, $addLinks = false, $lowercaseStart = true) . ".\n\nThis means that when you are in that area of the website while using the editor system, you will see an additional button marked 'edit this page' when editing is allowed.". $timeLimitationMessage . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'new area you can edit');
+		$directLink = $this->editSiteUrl . ((substr ($result['scope'], -1) == '*') ? substr ($result['scope'], 0, -1) : $result['scope']);
+		$this->sendMail ($result['username'], "You have been granted permission to make changes to " . $this->convertPermission ($result['scope'], $descriptions = true, $addLinks = false, $lowercaseStart = true) . ".\n\nThe direct link for this in the editing system is:\n{$directLink}\n\nThis means that when you are in that area of the website while using the editor system, you will see an additional button marked 'edit this page' when editing is allowed.". $timeLimitationMessage . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'new area you can edit');
 		return true;
 	}
 	
@@ -3063,14 +3064,12 @@ class pureContentEditor
 		if (substr ($location, -1) == '*') {$location = substr ($location, 0, -1);}
 		
 		# Format the string, uppercasing the start where necessary
-		switch ($descriptions) {
-			case true:
-				$string = ($lowercaseStart ? $startingString : ucfirst ($startingString)) . ' ' . ($addLinks ? "<a href=\"$location\">" : '') . "{$location}{$sectionTitleHtml}" . ($addLinks ? '</a>' : '') . $endingString;
-				break;
-				
-			case false:
-				$string = ($addLinks ? "<a href=\"{$location}\" title=\"" . ($lowercaseStart ? $startingString : ucfirst ($startingString)) . " {$location}{$endingString}\">" : '') . "{$location}{$star}{$sectionTitleHtml}" . ($addLinks ? '</a>' : '');
-				break;
+		$string = $startingString;
+		if (!$lowercaseStart) {$string = ucfirst ($startingString);}
+		if ($descriptions) {
+			$string .= ' ' . ($addLinks ? "<a href=\"$location\">" : '') . "{$location}{$sectionTitleHtml}" . ($addLinks ? '</a>' : '') . $endingString;
+		} else {
+			$string  = ($addLinks ? "<a href=\"{$location}\" title=\"" . $string . " {$location}{$endingString}\">" : '') . "{$location}{$star}{$sectionTitleHtml}" . ($addLinks ? '</a>' : '');
 		}
 		
 		# Return the constructed string
