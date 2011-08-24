@@ -92,7 +92,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.11';
+	var $version = '1.6.12';
 	
 	
 	# Constructor
@@ -2762,6 +2762,7 @@ class pureContentEditor
 			    'name'            => 'Startdate',
 			    'title'                    => 'Optional availability start date',
 			    'level'                    => 'date',
+				'prefill' => true,
 			));
 			$form->datetime (array (
 			    'name'            => 'Enddate',
