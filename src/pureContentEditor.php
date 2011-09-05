@@ -46,7 +46,8 @@ class pureContentEditor
 		'directoryIndex' => 'index.html',		// Default directory index name
 		'virtualPages'	=> false,		// Regexp location(s) where a page is claimed already to exist but there is no physical file
 		'templateMark' => '<!-- pureContentEditor template -->',	// Internal template mark; should not be changed
-		'newPageTemplate' => "\n<h1>Title goes here</h1>\n<p>Content starts here</p>",	// Default directory index file contents
+		'newPageTemplate' => "\n<h1>%title</h1>\n<p>Content starts here</p>",	// Default directory index file contents
+		'newPageTemplateDefaultTitle' => "Title goes here",	// What %title normally becomes
 		'messageSignatureGreeting' => 'Best wishes,',	// Preset text for the e-mail signature to users
 		'pureContentTitleFile' => '.title.txt',	// pureContent title file name
 		'pureContentMenuFile' => '.menu.html',	// pureContent menu file name
@@ -92,7 +93,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.12';
+	var $version = '1.6.13';
 	
 	
 	# Constructor
@@ -1460,6 +1461,7 @@ class pureContentEditor
 					'description'	=> "Please capitalise correctly. This is the text that will appear in the breadcrumb trail (the 'You are in...' line) and must not be too long.",
 					'default'			=> ($pageIsNew ? '' : $contents),
 					'required'				=> true,
+					'autofocus' => true,
 				));
 				break;
 				
@@ -1739,7 +1741,7 @@ class pureContentEditor
 	function pageIsTemplate ($contents)
 	{
 		# Determine the template in use
-		$templateHtml = ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : $this->newBlogIndexTemplate) : $this->newPageTemplate);
+		$templateHtml = ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : $this->newBlogIndexTemplate) : str_replace ('%title', $this->newPageTemplateDefaultTitle, $this->newPageTemplate));
 		
 		# Return true if it's the same as the template or starts with the template mark
 		return (($contents == $templateHtml) || (preg_match ("|^{$this->templateMark}|DsiU", $contents)));
@@ -1788,6 +1790,7 @@ class pureContentEditor
 		
 		# Form for the new folder
 		$form = new form (array (
+			'display' => 'paragraphs',
 			'displayDescriptions'	=> true,
 			'displayRestrictions'	=> false,
 			'formCompleteText'	=> false,
@@ -1795,33 +1798,55 @@ class pureContentEditor
 		));
 		$form->heading ('', 
 			($this->isBlogTreeRoot ? 
-				"<p>Create a new blog here.</p>
-				" . ($currentFolders ? '<p>Current blogs are <a href="#currentfolders">listed below</a>.</p>' : '')
+				'<p>Create a new blog here.' . ($currentFolders ? ' Current blogs are <a href="#currentfolders">listed below</a>.' : '') . '</p>'
 			: 
-				"<p>A new section (i.e. a folder) should be created when creating a new set of related pages (as distinct from a page within an existing topic area).</p>
-				" . ($currentFolders ? '<p>Current folders are <a href="#currentfolders">listed below</a>.</p>' : '')
-			) . "<h2>Important guidelines/rules:</h2>
-			<ul class=\"spaced\">
-				<li>When creating new folders, only <strong>lowercase alphanumeric characters</strong> are allowed (spaces, underscores and hyphens are not); <strong>maximum&nbsp;{$this->maximumFileAndFolderNameLength}&nbsp;characters</strong>.</li>
-				<li>It is important that you think about <strong>permanence</strong> and the need for a <strong>hierarchical structure</strong> when creating new folders. For instance, if creating a new section for an annual report, don't create a folder called annualreports" . date ('Y') . "; instead, create an 'annualreports' folder, then inside that create one called '" . date ('Y') . "'. This is then a hierarchical structure which will work in the longer term, without having to be changed.</li>
-				<li>Make names <strong>guessable</strong> and <strong>self-explanatory</strong>, so <strong>avoid abbreviations</strong>, and choose words that tend towards the generic. If you can't think of a single word that describes the new section, it is acceptable in these few cases to run two words together, e.g. 'annualreports'.</li>
-			</ul>
-			<p>You are currently in the location: <strong><a href=\"{$this->currentDirectory}{$this->directoryIndex}\">{$this->currentDirectory}</a></strong></p>
-		");
-		$form->input (array (
-			'name'			=> 'new',
-			'title'					=> ($this->isBlogTreeRoot ? 'New folder name for blog' : 'New section (folder) name'),
-			'description'	=> 'Please follow the guidelines above when entering the new folder name',
-			'required'				=> true,
-			'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}$",
-			'disallow' => ($currentFolders ? array ($currentFoldersRegexp => "Sorry, <a href=\"{$folderSubmitted}\">a " . ($this->isBlogTreeRoot ? 'blog' : 'folder') . " of that name</a> already exists, as shown in the list below. Please try another.") : false),
-		));
+				'<p><strong>A folder is a set of pages on the same topic</strong> (as distinct from a page within an existing topic area).' . ($currentFolders ? ' Current folders are <a href="#currentfolders">listed below</a>.' : '') . '</p>'
+			)
+			. '<br />'
+		);
 		
+		# Title
+		$form->heading (3, 'What is the title of this section?');
+		$description = "
+		<ul class=\"comment\" style=\"margin-bottom: 2.4em;\">
+			<li>Capitalise this at the start, like a normal sentence</li>
+			<li>Keep it fairly short</li>
+		</ul>
+		";
 		$form->input (array (
 			'name'			=> 'title',
-			'title'					=> ($this->isBlogTreeRoot ? "Title of blog (e.g. 'Webmaster's blog')" : "Title, for breadcrumb trail (the 'You are in...' line)"),
-			'description'	=> "Please capitalise correctly. This is the text that will appear in the breadcrumb trail (the 'You are in...' line) and must not be too long.",
+			'title'			=> ($this->isBlogTreeRoot ? "Title of blog (e.g. 'Webmaster's blog')" : "Title, which appears in the 'You are in&hellip;' line near the top of the page"),
+			'description'	=> $description,
+			'required'		=> true,
+			'size'			=> 35,
+			'placeholder'	=> 'Title of this section',
+			'autofocus' => true,
+		));
+		
+		# URL slug
+		$form->heading (3, 'Now choose a short one-word folder name');
+		$description = "
+		<ul class=\"comment\">
+			<li><strong>All lower-case, a-z and 0-9 only</strong> (no punctuation)</li>
+			<li><strong>Avoid abbreviations</strong>: make it guessable and self-explanatory</li>
+			<!--<li>{$this->maximumFileAndFolderNameLength} characters maximum</li>-->
+			<li>If necessary, run two words together</li>
+			<li>Consider permanence (e.g. 'contacts' for a telephone number page that will have addresses later)</li>
+			<li>Folders form a hierarchical structure</li>
+		</ul>
+		";
+		$form->input (array (
+			'name'			=> 'urlslug',
+			'title'					=> ($this->isBlogTreeRoot ? 'New folder name for blog' : 'Folder name for the section'),
+			'description'	=> $description,
 			'required'				=> true,
+			'maxlength' => $this->maximumFileAndFolderNameLength,
+			'size' => ceil (0.8 * $this->maximumFileAndFolderNameLength),
+			'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}$",
+			'disallow' => ($currentFolders ? array ($currentFoldersRegexp => "Sorry, <a href=\"{$folderSubmitted}\">a " . ($this->isBlogTreeRoot ? 'blog' : 'folder') . " of that name</a> already exists, as shown in the list below. Please try another.") : false),
+			'prepend' => $this->currentDirectory . ' ',
+			'append'  => '/',
+			'placeholder'	=> 'foldername',
 		));
 		
 		# Show the form and get any results
@@ -1829,12 +1854,13 @@ class pureContentEditor
 		
 		# Show the folders which currently exist if there are any
 		if (!$result) {
+			echo "\n<h3>Current folders</h2>";
 			echo $this->listCurrentResources ($currentFolders, 'folders');
 			return false;
 		}
 		
 		# Get the new folder location
-		$new = $result['new'];
+		$new = $result['urlslug'];
 		
 		# Create the directory
 		if (!$this->makeDirectory ($this->filestoreRoot . $this->currentDirectory . $new . '/')) {
@@ -1857,7 +1883,7 @@ class pureContentEditor
 		
 		# Determine the template
 		$this->isBlogMode = $this->isBlogMode ($this->currentDirectory . $new . '/');
-		$template = $this->templateMark . ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : str_replace ('%title', $result['title'], $this->newBlogIndexTemplate)) : $this->newPageTemplate);
+		$template = $this->templateMark . ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : str_replace ('%title', $result['title'], $this->newBlogIndexTemplate)) : str_replace ('%title', $result['title'], $this->newPageTemplate));
 		
 		# Create the front page
 		$frontPageLocation = $this->filestoreRoot . $this->currentDirectory . $new . '/' . $this->directoryIndex;
@@ -2037,6 +2063,7 @@ class pureContentEditor
 		
 		# Form for the new page
 		$form = new form (array (
+			'display' => 'paragraphs',
 			'displayDescriptions'	=> true,
 			'displayRestrictions'	=> false,
 			'formCompleteText'	=> false,
@@ -2084,21 +2111,6 @@ class pureContentEditor
 			# Determine if the name should be editable
 			$nameIsEditable = (!$forceIndexPageCreation);
 			
-			# Show the guideline text if it's editable
-			if ($nameIsEditable) {
-				$form->heading ('', "
-					<h2>Important guidelines/rules</h2>
-					<ul class=\"spaced\">
-						<li>" . ($this->forcePagenameIndex ? "The page name <strong>must start with <em>index</em></strong>" : "When creating new pages, only <strong>lowercase alphanumeric characters</strong> are allowed (spaces, underscores and hyphens are not).") . "</li>
-						<li>The page name must <strong>end with .html</strong> .</li>
-						<li>The total length (including the suffix .html) can be a <strong>maximum of {$this->maximumFileAndFolderNameLength} characters</strong>.</li>
-						<li>It is important that you think about <strong>permanence</strong> when creating new pages. For instance, if creating a new page to hold phone numbers, don't create a page called 'phonenumbers'; instead, create a page called 'contacts' as that gives more flexibility in the long-run.</li>
-						<li>Make names <strong>guessable</strong> and <strong>self-explanatory</strong>, so <strong>avoid abbreviations</strong>, and choose words that tend towards the generic. If you can't think of a single word that describes the new section, it is acceptable in these few cases to run two words together, e.g. 'annualreports'.</li>
-					</ul>
-					<p>You are currently in the location: <strong><a href=\"{$this->currentDirectory}{$this->directoryIndex}\">{$this->currentDirectory}</a></strong></p>
-				");
-			}
-			
 			# Define a regexp for the current page
 			$currentPagesRegexp = $this->currentPagesFoldersRegexp ($currentPages, $allowIndexAliasOverwriting = ($this->allowIndexAliasOverwriting && $forceIndexPageCreation));
 			
@@ -2108,16 +2120,32 @@ class pureContentEditor
 			# Take account of content negotiation semantics for filenames in the regexp
 			$regexp = '^(' . ($this->forcePagenameIndex ? 'index' : '[a-z0-9]') . "{1,{$this->maximumFileAndFolderNameLength}}" . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.html' : '\.html') . '|\.menu' . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.html' : '\.html') . '|\.title' . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.txt' : '\.txt') . ')$';
 			
+			# Heading
+			$form->heading ('', '<p><strong>A page is more detail within an existing section</strong>, not a whole new topic area.');
+			
 			# Page name
+			$description = "
+			<ul class=\"comment\">
+				<li><strong>All lower-case, a-z and 0-9 only</strong> (no punctuation)</li>
+				<li><strong>Must end with .html</strong></li>
+				<li><strong>Avoid abbreviations</strong>: make it guessable and self-explanatory</li>
+				<!--<li>{$this->maximumFileAndFolderNameLength} characters maximum</li>-->
+				<li>If necessary, run two words together</li>
+				<li>Consider permanence (e.g. 'contacts' for a telephone number page that will have addresses later)</li>
+			</ul>
+			";
+			$form->heading (3, 'Choose a short one-word file name, followed by .html');
 			$form->input (array (
-				'name'			=> 'new',
+				'name'			=> 'newpage',
 				'title'					=> 'New page filename',
-				'description'	=> ($nameIsEditable ? 'Please follow the guidelines above when entering the new filename' : ''),
+				'description'	=> ($nameIsEditable ? $description : false),
 				'required'				=> true,
 				'regexp'				=> $regexp,
 				'default'  => $newPageName = ($nameIsEditable ? '' : $this->directoryIndex),
 				'editable' => $nameIsEditable,
 				'disallow' => ($currentPages ? array ($currentPagesRegexp => "Sorry, <a href=\"{$pageSubmitted}\">a page of that name</a> already exists, as shown in the list below. Please try another.") : false),
+				'placeholder'	=> 'pagetitle.html',
+				'autofocus' => true,
 			));
 		}
 		
@@ -2127,6 +2155,7 @@ class pureContentEditor
 		# Show the folders which currently exist if there are any
 		if (!$result) {
 			if (!$this->isBlogMode) {
+				echo "\n<h3>Current pages</h2>";
 				echo $this->listCurrentResources ($currentPages, 'pages');
 			}
 			return false;
@@ -2141,13 +2170,13 @@ class pureContentEditor
 		} else {
 			
 			# Determine the new file location
-			$newFile = $this->currentDirectory . $result['new'];
+			$newFile = $this->currentDirectory . $result['newpage'];
 		}
 		
 		#!# There is a lot of duplication around here - refactor out the creation of a new page
 		
 		# Get the template in use
-		$template = $this->templateMark . ($this->isBlogMode ? str_replace ('%title', ucfirst ($result['summary']), $this->newBlogEntryTemplate) . "\n\n<p class=\"signature\"><em>{$this->users[$this->user]['Forename']}</em></p>" : $this->newPageTemplate);
+		$template = $this->templateMark . ($this->isBlogMode ? str_replace ('%title', ucfirst ($result['summary']), $this->newBlogEntryTemplate) . "\n\n<p class=\"signature\"><em>{$this->users[$this->user]['Forename']}</em></p>" : str_replace ('%title', $this->newPageTemplateDefaultTitle, $this->newPageTemplate));
 		
 		# Create the file
 		if (!application::createFileFromFullPath ($this->filestoreRoot . $newFile, $template, $addStamp = true)) {
@@ -3756,7 +3785,7 @@ class pureContentEditor
 	function submissions ($excludeTemplateFiles = false)
 	{
 		# Determine whether to exclude files the size of the template
-		$excludeFileTemplate = ($excludeTemplateFiles ? $this->newPageTemplate : false);
+		$excludeFileTemplate = ($excludeTemplateFiles ? str_replace ('%title', $this->newPageTemplateDefaultTitle, $this->newPageTemplate) : false);
 		$excludeContentsRegexp = ($excludeTemplateFiles ? '^' . $this->templateMark : false);
 		
 		# Get the file listing, excluding files the size of the template (in theory this may catch others, but in practice this is good enough - adding an md5() check would require opening all files and would reduce performance
