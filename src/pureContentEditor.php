@@ -93,7 +93,7 @@ class pureContentEditor
 	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.13';
+	var $version = '1.6.14';
 	
 	
 	# Constructor
@@ -139,7 +139,7 @@ class pureContentEditor
 		# Get the current directory for this page
 		$this->currentDirectory = $this->currentDirectory ();
 		
-		# Get the users (which will force creation if there are none)
+		# Get the administrators
 		if (!$this->administrators = $this->administrators ()) {return false;}
 		
 		# Ensure the user is in the user list
@@ -1423,6 +1423,7 @@ class pureContentEditor
 			'submitButtonText' => 'Submit page for approval' . ($this->userCanMakeFilesLiveDirectly ? ' / Make live' : ''),
 			'formCompleteText' => false,
 			'nullText' => 'Select which administrator to inform of this submission:',
+			// 'unsavedDataProtection' => true, // Seemingly has no effect on the richtext area unfortunately
 		));
 		
 		# Determine if the page is new
@@ -1537,7 +1538,7 @@ class pureContentEditor
 		
 		# Allow administrators to make live directly
 		if ($this->userCanMakeFilesLiveDirectly) {
-			$makeLiveDirectlyText = 'Make live directly (do not add to approval list)';
+			$makeLiveDirectlyText = 'Make live directly (do not send for moderation)';
 			$form->checkboxes (array (
 			    'name'			=> 'preapprove',
 			    'values'			=> array ($makeLiveDirectlyText,),
@@ -2303,9 +2304,11 @@ class pureContentEditor
 		
 		# Create a list of current users; if the Source field exists, users can only be added if they are a lookup user (so list only local users)
 		$users = array ();
-		foreach ($this->users as $user => $attributes) {
-			if (!isSet ($attributes['Source']) || ($attributes['Source'] != 'Lookup (database)')) {
-				$users[] = $user;
+		if (isSet ($this->users) && $this->users) {
+			foreach ($this->users as $user => $attributes) {
+				if (!isSet ($attributes['Source']) || ($attributes['Source'] != 'Lookup (database)')) {
+					$users[] = $user;
+				}
 			}
 		}
 		
