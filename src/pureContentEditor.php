@@ -18,11 +18,73 @@
  */
 
 
+
+# Bugs / enhancements needed:
+
+#!# Add more info for all reportError calls so that they location info is always included to enable debugging
+#!# When doing include (), do a check first for the type of file; if a text file, just do a file_get_contents surround with <pre />
+#!# Prevent creation of a permission when a more wide-ranging one exists
+#!# Delete all permissions when promoting to an administrator
+#!# Option not to mail yourself when you approve your own page and you are the only administrator
+#!# Audit the use of relative links
+#!# Checking writability needs to be done on the proposed file, NOT at top level
+#!# Prevent overlapping permissions, e.g. /foo/ being created when /foo/* exists or /* exists, rather than using the ksort in permissions()
+
+
+# Specialised gui for menu, title and header files (rather than using 'list pages' or entering the URL directly)
+
+
+### Potential future development suggestions:
+#R# Consider moving chdir into showMaterial ();
+#R# Implement a better algorithm for typeOfFile ()
+#R# Implement the notion of a currently active permission which is definitive and which can be looked up against
+# Groups facility
+# <table class="lines"> - has to wait for FCKeditor to support this: see http://dev.fckeditor.net/ticket/825
+# Automatic deletion of permissions when folders don't exist, if a setting is turned on for this (NB needs to distinguish between not present and no permission - may not be possible)
+# More extensive menu editing system for the switch in edit ()
+# Provide a validation system (perhaps using Tidy if it is not already)? - See: http://thraxil.org/users/anders/posts/2005/09/20/Validation-meet-Unit-Testing-Unit-Testing-meet-Validation/
+# Add a link checking mechanism
+# Extension to deal with deleting/moving files or even whole folders? - would create major difficulties with integration with redirects etc, however
+# Tighten up matching of ' src=' (currently will match that string outside an img tag)
+# Allow browsing of empty folders - should suggest creating a file
+# Move as many changes as possible made within /_fckeditor into the PHP constructor (as passed through ultimateForm.php)
+# Add use of application::getTitleFromFileContents in convertPermission () to get the contents for files
+# Find some way to enable browsing of /foo/bar/[no index.html] where that is a new directory that does not exist on the live site - maybe a mod_rewrite change
+# More control over naming - moving regexp into the settings but disallow _ at the start
+# Ability to add a permission directly when adding a user rather than using two stages (and hence two e-mails)
+# BUG: _fckeditor being appended to images/links in some cases
+# Moderation should cc: other administrators (not yourself though) when a page is approved
+# Make /page.html rights the default when on a section page rather than an index page
+# Enable explicit creation of .title.txt files
+# Sort by ... for reviewing
+# Diffing function - apparently wikimedia includes a good PHP class for this - see http://cvs.sourceforge.net/viewcvs.py/wikipedia/phase3/includes/  - difference engine
+# Cookie, /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
+# Direct update rights
+# Link checker
+# Option to ban top-level _directory_ creation as well as files
+# Force .menu.html links to be absolute
+# 'Mail all users' function (complete with "are you sure you want to?" confirmation)
+# [New] symbol to mark when a page is new rather than updated
+# Lookup-enabling interface for auto permissions
+# Have a single 'master' port so that links are correct when running off two ports at once (or sort out /login ...)
+# Change all file writes so that writability check is done in setup, removing the need for error reporting
+#  sometimes not being escaped properly
+# /sitetech/ area editing GUI (for admins)
+# Start/end date should be in user not permission side
+# Consider making administrator rights set as a select box rather than a difficultly-titled checkbox
+# Need to disable the stub file being launched directly, using a check like ($_SERVER['DOCUMENT_ROOT'] . $_SERVER['REQUEST_URI'] == $_SERVER['SCRIPT_FILENAME']) but which takes into account query strings and port switching
+# Find some way round the quirk that an area being limited by IP+Raven says that a username isn't being supplied, unless the user has FIRST logged in elsewhere on the same domain and 'AAForceInteract On' has been added to apache
+# Find a less destructive way of setting the stylesheet layout for the actions box
+# Set a way of allowing editor/filemanager/connectors/php/config.php  to change $Config['Enabled'] depending on the value of $_SERVER['REMOTE_USER']
+
+
+
+
 # Create a class which adds editing functions to the pureContent framework
 class pureContentEditor
 {
 	# Specify available arguments as defaults or as NULL (to represent a required argument)
-	var $parameterDefaults = array (
+	private $parameterDefaults = array (
 		'editHostScheme' => 'http',				// Scheme of the editing site (i.e. http or https)
 		'editHostName' => NULL,					// Hostname of the editing site
 		'editHostPort' => 80,					// Port number of the editing site
@@ -90,29 +152,35 @@ class pureContentEditor
 	);
 	
 	# Specify the minimum version of PHP required
-	var $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
+	private $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
 	
 	# Version of this application
-	var $version = '1.6.14';
+	private $version = '1.7.0';
+	
+	# HTML for the menu
+	private $menuHtml = '';
 	
 	
 	# Constructor
-	function pureContentEditor ($parameters = array ())
+	public function __construct ($parameters = array ())
 	{
+		# Run the setup
+		$html = $this->main ($parameters);
+		
 		# Enclose the entire application within a div to assist CSS styling
-		echo "\n" . '<div id="purecontenteditor">';
+		$html = "\n" . '<div id="purecontenteditor">' . $html . "\n" . '</div>';
 		
-		# Run the main program
-		$this->main ($parameters);
-		
-		# Finish enclosing the entire application within a div to assist CSS styling
-		echo "\n" . '</div>';
+		# Show the HTML
+		echo $html;
 	}
 	
 	
 	# Main function
-	function main ($parameters)
+	private function main ($parameters)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Load required libraries
 		require_once ('application.php');
 		require_once ('csv.php');
@@ -128,22 +196,37 @@ class pureContentEditor
 		$this->user = (isSet ($_SERVER['REMOTE_USER']) ? $_SERVER['REMOTE_USER'] : NULL);
 		
 		# Ensure the setup is OK
-		if (!$this->setup ($parameters)) {return false;}
+		if ($errorsHtml = $this->setup ($parameters)) {
+			$html .= $errorsHtml;
+			return $html;
+		}
 		
 		# Get the current page and attributes from the query string
-		if (!list ($this->page, $this->action, $this->attribute) = $this->parseQueryString ()) {return false;}
+		if (!list ($this->page, $this->action, $this->attribute) = $this->parseQueryString ()) {
+			$html .= application::showUserErrors ('The URL is invalid.');
+			return $html;
+		}
 		
 		# Get the users (which will force creation if there are none)
-		if (!$this->users = $this->users ()) {return false;}
+		if (!$this->users = $this->users ($errorsHtml)) {
+			$html .= $errorsHtml;
+			return $html;
+		}
 		
 		# Get the current directory for this page
 		$this->currentDirectory = $this->currentDirectory ();
 		
 		# Get the administrators
-		if (!$this->administrators = $this->administrators ()) {return false;}
+		if (!$this->administrators = $this->administrators ($errorsHtml)) {
+			$html .= $errorsHtml;
+			return $html;
+		}
 		
 		# Ensure the user is in the user list
-		if (!$this->userValid ()) {return false;}
+		if (!$this->validUser ()) {
+			$html .= application::showUserErrors ('You are not in the list of allowed users and so have no access to the editing facility.');
+			return $html;
+		}
 		
 		# Determine whether the user is an administrator
 		$this->userIsAdministrator = $this->userIsAdministrator ();
@@ -156,21 +239,27 @@ class pureContentEditor
 		$this->submissions = $this->submissions ();
 		
 		# Clean up the directory structure if necessary
-		$this->cleanUp = $this->cleanUp ();
+		$html .= $this->cleanUp ();
 		
 		# Determine any staging page and any real page, and whether to use the staging page
-		$this->livePage = $this->livePage ();
+		$this->livePage = $this->livePage ($this->page);
 		$this->particularPage = $this->particularPage ();
-		$this->stagingPage = $this->stagingPage ();
+		$this->stagingPage = $this->stagingPage ($this->page);
 		
 		# Ensure that a page does exist
-		if (!$this->ensurePagePresent ()) {return false;}
+		if ($errorsHtml = $this->ensurePagePresent ()) {
+			$html .= $errorsHtml;
+			return $html;
+		}
 		
 		# Determine whether to use the staging page
 		$this->pageToUse = $this->pageToUse ();
 		
 		# Determine the editable version to use
-		if (!$this->editableFile = $this->editableFile ()) {return false;}
+		if (!$this->editableFile = $this->editableFile ($errorsHtml)) {
+			$html .= $errorsHtml;
+			return $html;
+		}
 		
 		# Get the contents of the latest version
 		$this->editableFileContents = $this->editableFileContents ();
@@ -199,29 +288,41 @@ class pureContentEditor
 		# Get the available actions
 		$this->actions = $this->actions ();
 		
-		# Show the menu
-		echo $this->showMenu ();
+		# Generate the menu (but do not show it yet, as it could get regenerated)
+		$this->menuHtml = $this->generateMenu ();
 		
-		# Check that the action is allowed; 'live' is a special case as it's not a real function as such, as is logout
+		# Check that the action is allowed; 'live' and 'logout' are special cases as they are not real functions as such
 		if (!array_key_exists ($this->action, $this->actions) || $this->action == 'live' || ($this->action == 'logout' && $this->logout)) {
-			echo "\n" . '<p class="failure">You appear to have requested a non-existent/unavailable function which is not available or to which you do not have access. Please use one of the links in the menu to continue.</p>';
-			return false;
+			$html .= $this->menuHtml;
+			$html .= "\n" . '<p class="failure">You appear to have requested a non-existent/unavailable function which is not available or to which you do not have access. Please use one of the links in the menu to continue.</p>';
+			return $html;
 		}
 		
 		# If the function is administrative but the user is not an administrator, end
 		if ($this->actions[$this->action]['administratorsOnly'] && !$this->userIsAdministrator) {
-			echo "\n" . '<p class="failure">You are not an administrator, so cannot perform the requested operation.</p>';
-			return false;
+			$html .= $this->menuHtml;
+			$html .= "\n" . '<p class="failure">You are not an administrator, so cannot perform the requested operation.</p>';
+			return $html;
 		}
 		
-		# Take action
-		$this->{$this->action} ($this->attribute);
+		# Take action, i.e. generate the page
+		$pageHtml = $this->{$this->action} ($this->attribute);
+		
+		# Compile the HTML
+		$html .= $this->menuHtml;
+		$html .= $pageHtml;
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to setup the application
-	function setup ($parameters)
+	private function setup ($parameters)
 	{
+		# Start a container for HTML errors
+		$errorsHtml = '';
+		
 		# Check that all required arguments have been supplied, import supplied arguments and assign defaults
 		foreach ($this->parameterDefaults as $parameter => $defaultValue) {
 			if ((is_null ($defaultValue)) && (!isSet ($parameters[$parameter]))) {
@@ -262,8 +363,9 @@ class pureContentEditor
 			$this->archiveRoot = ((substr ($this->archiveReplacedLiveFiles, -1) == '/') ? substr ($this->archiveReplacedLiveFiles, 0, -1) : $this->archiveReplacedLiveFiles);
 		}
 		
-		# Ensure the current page is not the instantiating stub file
-		$this->stubFileLocation = ereg_replace ('^' . $this->liveSiteRoot, '', $_SERVER['SCRIPT_FILENAME']);
+		# Define the instantiating stub file (e.g. /sitetech/purecontenteditor/purecontenteditor.html) so this can be added to the banned locations
+		$delimiter = '@';
+		$this->stubFileLocation = preg_replace ($delimiter . '^' . addcslashes ($this->liveSiteRoot, $delimiter) . $delimiter, '', $_SERVER['SCRIPT_FILENAME']);
 		
 		# Ensure the bannedLocations and technical file locations are arrays
 		$this->bannedLocations = application::ensureArray ($this->bannedLocations);
@@ -276,8 +378,8 @@ class pureContentEditor
 		if ($this->filestoreRoot) {
 			if (!is_dir ($this->filestoreRoot)) {
 				if (!@mkdir ($this->filestoreRoot, 0775, $recursive = true)) {
-					$this->reportErrors ('There was a problem creating the main filestore directory.', "The filestoreRoot, which cannot be created, specified in the settings, is: {$this->filestoreRoot}/");
-					return false;
+					$errorsHtml .= $this->reportErrors ('There was a problem creating the main filestore directory.', "The filestoreRoot, which cannot be created, specified in the settings, is: {$this->filestoreRoot}/");
+					return $errorsHtml;
 				}
 			}
 			if (!application::directoryIsWritable ($this->filestoreRoot)) {
@@ -289,8 +391,8 @@ class pureContentEditor
 		if ($this->archiveRoot) {
 			if (!is_dir ($this->archiveRoot)) {
 				if (!@mkdir ($this->archiveRoot, 0775, $recursive = true)) {
-					$this->reportErrors ('There was a problem creating the main archive directory.', "The archiveRoot, which cannot be created, specified in the settings, is: {$this->archiveRoot}/");
-					return false;
+					$errorsHtml .= $this->reportErrors ('There was a problem creating the main archive directory.', "The archiveRoot, which cannot be created, specified in the settings, is: {$this->archiveRoot}/");
+					return $errorsHtml;
 				}
 			}
 			if (!application::directoryIsWritable ($this->archiveRoot)) {
@@ -340,20 +442,20 @@ class pureContentEditor
 		
 		# Check for any setup errors and end if any found
 		if (isSet ($setupErrors)) {
-			$this->reportErrors ($setupErrors);
-			return false;
+			$errorsHtml .= $this->reportErrors ($setupErrors);
+			return $errorsHtml;
 		}
 		
 		# Otherwise return success
-		return true;
+		return $errorsHtml;
 	}
 	
 	
 	# Function to get the live page filename
-	function livePage ()
+	private function livePage ($page)
 	{
 		# Construct the filename
-		$file = $this->liveSiteRoot . $this->page;
+		$file = $this->liveSiteRoot . $page;
 		
 		# Return the page filename or false
 		return $livePageFile = (file_exists ($file) ? $file : false);
@@ -361,7 +463,7 @@ class pureContentEditor
 	
 	
 	# Function to get a specified page filename
-	function particularPage ()
+	private function particularPage ()
 	{
 		# A particular page can be specified if the action is editing/browsing/reviewing and the page is specified as an attribute and exists
 		if ($this->action != 'edit' && $this->action != 'browse' && $this->action != 'review') {return false;}
@@ -373,14 +475,14 @@ class pureContentEditor
 	
 	
 	# Function to get the staging page filename
-	function stagingPage ()
+	private function stagingPage ($page)
 	{
 		# Assume there is no staging page
 		$stagingPage = false;
 		
 		# Loop through the submissions assigning the last (i.e. latest) file as the chosen one if there are several
 		foreach ($this->submissions as $file => $attributes) {
-			if ($this->page == ($attributes['directory'] . $attributes['filename'])) {
+			if ($page == ($attributes['directory'] . $attributes['filename'])) {
 				$stagingPage = $file;	// NB This exists, otherwise it would not be in the submissions list
 			}
 		}
@@ -391,8 +493,11 @@ class pureContentEditor
 	
 	
 	# Function to ensure that a page is present
-	function ensurePagePresent ()
+	private function ensurePagePresent ()
 	{
+		# Start a container for HTML errors
+		$errorsHtml = '';
+		
 		# Check here whether the directory contains an index file
 		$this->directoryContainsIndex = $this->directoryContainsIndex ();
 		
@@ -426,7 +531,7 @@ class pureContentEditor
 				if (@file_get_contents ($this->liveSiteUrl . $this->page)) {
 					if (!$this->pageIs404) {
 						$this->pageIsBeingAliased = true;
-						return true;
+						return $errorsHtml;
 					}
 				}
 			}
@@ -434,24 +539,23 @@ class pureContentEditor
 			# If there is no directory index, force creation
 			if (!$this->directoryContainsIndex) {
 				$this->action = 'newPage';
-				return true;
+				return $errorsHtml;
 			}
 			
-			# Otherwise throw a 404
+			# Otherwise return false, which will trigger a 404
 			application::sendHeader (404);
-			$html  = "\n" . '<h1>Page not found</h1>';
-			$html .= "\n" . '<p class="failure">The page you requested cannot be found.</p>';
-			echo $html;
-			return false;
+			$errorsHtml .= "\n" . '<h1>Page not found</h1>';
+			$errorsHtml .= "\n" . '<p class="failure">The page you requested cannot be found.</p>';
+			return $errorsHtml;
 		}
 		
-		# Otherwise return true
-		return true;
+		# Otherwise return no errors
+		return $errorsHtml;
 	}
 	
 	
 	# Function to check whether a current directory contains an index page
-	function directoryContainsIndex ()
+	private function directoryContainsIndex ()
 	{
 		# Return true if a virtual page exists
 		if ($this->matchLocation ($this->virtualPages, $this->currentDirectory . $this->directoryIndex)) {return true;}
@@ -470,12 +574,12 @@ class pureContentEditor
 	
 	
 	# Function to determine which page to use
-	function pageToUse ()
+	private function pageToUse ()
 	{
 		# If a particular page has been defined, return that
 		if ($this->particularPage) {return 'particular';}
 		
-		# Flag yes if there is no live page (NB ensurePagePresent () will have been run by now)
+		# Flag yes if there is no live page (NB ensurePagePresent() will have been run by now)
 		if (!$this->livePage) {return 'staging';}
 		
 		# Flag no if there is no staging page
@@ -490,7 +594,7 @@ class pureContentEditor
 	
 	
 	# Function to determine the latest version in use
-	function editableFile ()
+	private function editableFile (&$errorsHtml = '')
 	{
 		# Define the latest version
 		switch ($this->pageToUse) {
@@ -507,19 +611,19 @@ class pureContentEditor
 		
 		# Check that the file is readable (this is done rather than checking the return value of file_get_contents in editableFileContents () because the latter may return a zero-length file)
 		if (!is_readable ($editableFile)) {
-			$this->reportErrors ('There was a problem opening the file.', "The file name is {$editableFile} .");
+			$errorsHtml .= $this->reportErrors ('There was a problem opening the file.', "The file name is {$editableFile} .");
 			return false;
 		}
 		
-		# Return true otherwise
+		# Return the filename
 		return $editableFile;
 	}
 	
 	
 	# Function to get the contents of the latest version in use
-	function editableFileContents ()
+	private function editableFileContents ()
 	{
-		# Get the contents (NB is readable has been done within editableFile (); no false checking is done here, as this could indicate a zero-length file)
+		# Get the contents (NB is readable has been done within editableFile(); no false checking is done here, as this could indicate a zero-length file)
 		$contents = file_get_contents ($this->editableFile);
 		
 		# Return the contents
@@ -528,7 +632,7 @@ class pureContentEditor
 	
 	
 	# Function to determine whether the editor should run in blog mode
-	function isBlogMode ($location = false)
+	private function isBlogMode ($location = false)
 	{
 		# Create a blog mode reminder
 		$this->blogModeReminder = "\n<p class=\"warning\"><strong>Reminder</strong>: Blog entries should <strong>not</strong> be a replacement for material properly organised within the main site hierarchy.<br />Make sure material that should be within the main site is put there <strong>before</strong> creating the blog posting.</p>";
@@ -564,19 +668,20 @@ class pureContentEditor
 			}
 			
 			# Return true if the URL matches normally
-			if (ereg ('^' . $blog, $this->currentDirectory)) {
+			$delimiter = '@';
+			if (preg_match ($delimiter . '^' . addcslashes ($blog, $delimiter) . $delimiter, $this->currentDirectory)) {
 				$this->blogTreeRoot = $blog;
 				return true;
 			}
 		}
 		
-		# Return true if not found
+		# Return false if not found
 		return false;
 	}
 	
 	
 	# Function to pre-process the page contents
-	function preprocessContents ($content)
+	private function preprocessContents ($content)
 	{
 		# Standard replacements
 		$replacements = array (
@@ -593,13 +698,14 @@ class pureContentEditor
 		# Replacement of image class with a similarly-named align attribute (this is then reversed afterwards - this is so that the DHTML editor picks up the alignment correctly
 		if ($this->imageAlignmentByClass) {
 			$replacements += array (
-				'<img([^>]*) class="(left|center|centre|right)"([^>]*)>' => '<img\1 align="\2"\3>',
+				'<img([^>]*) class="(left|center|centre|right)"([^>]*)>' => '<img$1 align="$2"$3>',
 			);
 		}
 		
 		# Perform the replacements
+		$delimiter = '@';	// Must not be in the strings above
 		foreach ($replacements as $find => $replace) {
-			$content = eregi_replace ($find, $replace, $content);
+			$content = preg_replace ($delimiter . $find . $delimiter, $replace, $content);
 		}
 		
 		# Return the contents
@@ -608,10 +714,10 @@ class pureContentEditor
 	
 	
 	# Function to parse the query string and return the page and attributes; this is basically the guts of dealing with all the hacked mod-rewrite rerouting stuff
-	function parseQueryString ()
+	private function parseQueryString ()
 	{
 		# Check for location-independent URL handling
-		if (ereg ('^(([^\?]+)\.[0-9]{8}-[0-9]{6}\.[^\?]+)(\?([a-zA-Z]+))?$', $_SERVER['REQUEST_URI'], $matches)) {
+		if (preg_match ('/^(([^\?]+)\.[0-9]{8}-[0-9]{6}\.[^\?]+)(\?([a-zA-Z]+))?$/', $_SERVER['REQUEST_URI'], $matches)) {
 			
 			# Location-independent URL handling; this is where /foo/bar.html.YYYYMMDD-hhmmss.username?action is used to derive the page itself as /foo/bar.html rather than /foo/bar.html?action=/foo/bar.html.YYYYMMDD-hhmmss.username?action
 			
@@ -665,7 +771,8 @@ class pureContentEditor
 /*	breadcrumb editing work - TODO
 				# If the breadcrumb type is requested, substitute the directory index component with the breadcrumb component
 				if ($action == 'breadcrumb') {
-					$page = ereg_replace (basename ($page) . '$', $this->pureContentTitleFile, $page);
+					$delimiter = '@';
+					$page = preg_replace ($delimiter . addcslashes (basename ($page), $delimiter) . '$' . $delimiter, $this->pureContentTitleFile, $page);
 				}
 */
 			}
@@ -677,7 +784,7 @@ class pureContentEditor
 	
 	
 	# Function to get the current directory for this page
-	function currentDirectory ()
+	private function currentDirectory ()
 	{
 		# Get the current page
 		$currentPage = str_replace ('\\', '/', $this->page);
@@ -694,7 +801,7 @@ class pureContentEditor
 	
 	
 	# Function to get users
-	function users ()
+	private function users (&$html)
 	{
 		# Get the CSV (local) users, ensuring the result is an array so that array_merge doesn't crash
 		if (!$csvUsers = csv::getData ($this->userDatabase)) {
@@ -730,7 +837,7 @@ class pureContentEditor
 		
 		# End if there are no users and force addition
 		if (!$users) {
-			$this->userAdd ($firstRun = true);
+			$html .= $this->userAdd ($firstRun = true);
 			return false;
 		}
 		
@@ -744,7 +851,7 @@ class pureContentEditor
 	
 	
 	# Function to get permissions
-	function permissions ()
+	private function permissions ()
 	{
 		# Get the data and return it
 		$csvPermissions = csv::getData ($this->permissionsDatabase);
@@ -786,7 +893,7 @@ class pureContentEditor
 	
 	
 	# Function to get administrators
-	function administrators () {
+	private function administrators (&$errorsHtml = '') {
 		
 		# Determine the administrators
 		$administrators = array ();
@@ -798,7 +905,7 @@ class pureContentEditor
 		
 		# Throw an error if there are no administrators
 		if (!$administrators) {
-			$this->reportErrors ('There are no administrators assigned. Somehow the user database has been edited incorrectly. The administrator should reset the user database or edit it directly to ensure there is an administrator.');
+			$errorsHtml .= $this->reportErrors ('There are no administrators assigned. Somehow the user database has been edited incorrectly. The administrator should reset the user database or edit it directly to ensure there is an administrator.');
 			return false;
 		}
 		
@@ -808,7 +915,7 @@ class pureContentEditor
 	
 	
 	# Function to determine whether the user is an administrator
-	function userIsAdministrator ($particularUser = false)
+	private function userIsAdministrator ($particularUser = false)
 	{
 		# Determine the user to check, defaulting to the administrator
 		$userToCheck = ($particularUser ? $particularUser : $this->user);
@@ -819,7 +926,7 @@ class pureContentEditor
 	
 	
 	# Function to determine whether the page is banned
-	function changesBannedHere ()
+	private function changesBannedHere ()
 	{
 		# Return the result directly
 		return $this->matchLocation ($this->bannedLocations, $this->page);
@@ -827,7 +934,7 @@ class pureContentEditor
 	
 	
 	# Function to determine whether the user has page creation rights here
-	function rights ()
+	private function rights ()
 	{
 		# Determine the user's rights
 		$rights = $this->determineRights ();
@@ -850,7 +957,7 @@ class pureContentEditor
 	
 	
 	# Function to determine the user's rights overall
-	function determineRights ()
+	private function determineRights ()
 	{
 		# Determine if the user can make files live directory (further changes below)
 		$this->userCanMakeFilesLiveDirectly = ($this->userIsAdministrator ? true : false);
@@ -880,7 +987,7 @@ class pureContentEditor
 	
 	
 	# Function to perform a location match; returns either a string (equating to true) or false
-	function matchLocation ($locations, $test, $determineLocationInUse = false)
+	private function matchLocation ($locations, $test, $determineLocationInUse = false)
 	{
 		# If necessary, set the default for the location in use
 		if ($determineLocationInUse) {$this->locationInUse = false;}
@@ -892,6 +999,7 @@ class pureContentEditor
 		$locations = application::ensureArray ($locations);
 		
 		# Loop through each location (which are ordered such that overriding rights are listed (and will thus be matched) first (i.e. tree>directory>page)
+		$delimiter = '@';
 		foreach ($locations as $location) {
 			
 			# Check for an exact match
@@ -902,7 +1010,7 @@ class pureContentEditor
 			
 			# Check for pages in the same directory
 			if (substr ($location, -1) == '/') {
-				$page = ereg_replace ('^' . $location, '', $test);
+				$page = preg_replace ($delimiter . '^' . addcslashes ($location, $delimiter) . $delimiter, '', $test);
 				if (strpos ($page, '/') === false) {
 					if ($determineLocationInUse) {$this->locationInUse = $location;}
 					return 'directory';	// i.e. true
@@ -911,8 +1019,8 @@ class pureContentEditor
 			
 			# Check for pages below the test location
 			if (substr ($location, -1) == '*') {
-				if (ereg ('^' . $location, $test)) {
-					if ($location != ereg_replace ('^' . $location, '', $test)) {
+				if (preg_match ($delimiter . '^' . addcslashes ($location, $delimiter) . $delimiter, $test)) {
+					if ($location != preg_replace ($delimiter . '^' . addcslashes ($location, $delimiter) . $delimiter, '', $test)) {
 						if ($determineLocationInUse) {$this->locationInUse = $location;}
 						return 'tree';	// i.e. true
 					}
@@ -920,7 +1028,7 @@ class pureContentEditor
 			}
 			
 			# Check for exact regexp matches, which would be a on a per-page basis as the others have not caught it
-			if (ereg ($location, $test)) {
+			if (preg_match ($delimiter . addcslashes ($location, $delimiter) . $delimiter, $test)) {
 				return 'page';	// i.e. true
 			}
 		}
@@ -931,7 +1039,7 @@ class pureContentEditor
 	
 	
 	# Function to determine whether the user can edit the current page
-	function userCanEditCurrentPage ()
+	private function userCanEditCurrentPage ()
 	{
 		# Set a flag for whether the page contains the string <?php ; return false if found; however, administrators can edit the page, but in non-WYSIWYG mode
 		if ($this->pageContainsPhp && !$this->userIsAdministrator) {return false;}
@@ -945,7 +1053,7 @@ class pureContentEditor
 	
 	
 	# Function to determine whether the page contains PHP instructions
-	function pageContainsPhp ()
+	private function pageContainsPhp ()
 	{
 		# Return false if checking not required
 		if (!$this->enablePhpCheck) {return false;}
@@ -956,25 +1064,28 @@ class pureContentEditor
 	
 	
 	# Function to get the type of file
-	function typeOfFile ()
+	private function typeOfFile ()
 	{
 		# Get the filename
 		$filename = basename ($this->editableFile);
 		
+		# Assign a preg delimiter
+		$delimiter = '@';
+		
 		# Title file, starts with the string contained in $this->pureContentTitleFile
-		if (ereg ('^' . $this->pureContentTitleFile, $filename)) {return 'titleFile';}
+		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentTitleFile, $delimiter) . $delimiter, $filename)) {return 'titleFile';}
 		
 		# Menu file, starts with the string contained in $this->pureContentMenuFile
-		if (ereg ('^' . $this->pureContentMenuFile, $filename)) {return 'menuFile';}
+		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentMenuFile, $delimiter) . $delimiter, $filename)) {return 'menuFile';}
 		
 		# Text files
-		if (ereg ('\.txt((\.[0-9]{8}-[0-9]{6}\..+)?)$', $filename)) {return 'txtFile';}
+		if (preg_match ($delimiter . '\.txt((\.[0-9]{8}-[0-9]{6}\..+)?)$' . $delimiter, $filename)) {return 'txtFile';}
 		
 		# CSS files
-		if (ereg ('\.css((\.[0-9]{8}-[0-9]{6}\..+)?)$', $filename)) {return 'cssFile';}
+		if (preg_match ($delimiter . '\.css((\.[0-9]{8}-[0-9]{6}\..+)?)$' . $delimiter, $filename)) {return 'cssFile';}
 		
 		# Javascript files
-		if (ereg ('\.js((\.[0-9]{8}-[0-9]{6}\..+)?)$', $filename)) {return 'jsFile';}
+		if (preg_match ($delimiter . '\.js((\.[0-9]{8}-[0-9]{6}\..+)?)$' . $delimiter, $filename)) {return 'jsFile';}
 		
 		# Default to a page
 		return 'page';
@@ -982,7 +1093,7 @@ class pureContentEditor
 	
 	
 	# Function to get menu actions and their permissions
-	function actions ()
+	private function actions ()
 	{
 		# Create an array of the actions
 		$actions = array (
@@ -1009,7 +1120,7 @@ class pureContentEditor
 			'live' => array (
 				'title' => 'View live',
 				'tooltip' => 'View the live equivalent of this page',
-				'url' => $this->liveSiteUrl . $this->page . '" target="_blank',
+				'url' => $this->liveSiteUrl . $this->chopDirectoryIndex ($this->page) . '" target="_blank',
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
 				'check' => 'livePage',
@@ -1201,11 +1312,10 @@ class pureContentEditor
 	
 	
 	# Function to ensure there is an authenticated user
-	function userValid ()
+	private function validUser ()
 	{
 		# Ensure the user is in the list of allowed users
 		if (!isSet ($this->users[$this->user])) {
-			echo application::showUserErrors ('You are not in the list of allowed users and so have no access to the editing facility.</p>');
 			return false;
 		}
 		
@@ -1215,22 +1325,34 @@ class pureContentEditor
 	
 	
 	# Wrapper function to deal with the changelog
-	function logChange ($message)
+	private function logChange ($message)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Prepend the message
 		$message = $this->makeTimestamp () . ",{$this->user}," . $message . "\r\n";
 		
 		# Log the change
 		#!# Move to checking writability first then remove the warning here
 		if (!application::writeDataToFile ($message, $this->filestoreRoot . $this->changelog)) {
-			$this->reportErrors ('There was a problem logging this change.', "The log file is at {$this->filestoreRoot}{$this->changelog} .");
+			$html .= $this->reportErrors ('There was a problem logging this change.', "The log file is at {$this->filestoreRoot}{$this->changelog} .");
 		}
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
-	# Function to add an administrative menu
-	function showMenu ()
+	# Function to generate a menu
+	private function generateMenu ($respecifiedLocation = false)
 	{
+		# If the current page in the browser URL is no longer valid (e.g. a reviewed page has been deleted, or a page is made live at a respectified location), regenerate the actions list
+		if ($respecifiedLocation) {
+			$this->page = $this->nearestPage ($respecifiedLocation);
+			$this->actions = $this->actions ();
+		}
+		
 		# Group the actions
 		foreach ($this->actions as $action => $attributes) {
 			$grouping = $attributes['grouping'];
@@ -1247,7 +1369,11 @@ class pureContentEditor
 			$html .= "\n\t\t<li>{$group}:";
 			$html .= "\n\t\t\t<ul>";
 			foreach ($actions as $action) {
-				$html .= "\n\t\t\t\t<li" . (($action == $this->action) ? ' class="selected"' : '') . '><a href="' . (isSet ($this->actions[$action]['url']) ? $this->actions[$action]['url'] : $this->chopDirectoryIndex ($this->page) . "?{$action}") . '"' . ($this->actions[$action]['administratorsOnly'] ? ' class="administrative"' : '') . " title=\"{$this->actions[$action]['tooltip']}\">{$this->actions[$action]['title']}</a></li>";
+				$href = (isSet ($this->actions[$action]['url']) ? $this->actions[$action]['url'] : $this->chopDirectoryIndex ($this->page) . "?{$action}");
+				$liClassSelected = (($action == $this->action) ? ' class="selected"' : '');
+				$classHtml = ($this->actions[$action]['administratorsOnly'] ? ' class="administrative"' : '');
+				$titleHtml = " title=\"{$this->actions[$action]['tooltip']}\"";
+				$html .= "\n\t\t\t\t<li{$liClassSelected}><a href=\"{$href}\"{$classHtml}{$titleHtml}>{$this->actions[$action]['title']}</a></li>";
 			}
 			$html .= "\n\t\t\t</ul></li>";
 		}
@@ -1259,8 +1385,36 @@ class pureContentEditor
 	}
 	
 	
+	# Function to find the nearest page to the current (e.g. if /foo/bar/zoo.html is supplied but doesn't exist, but /foo/bar/index.html does, return that, else if /foo/index.html exists, return that)
+	private function nearestPage ($page)
+	{
+		# If the page exists, return it
+		if ($this->livePage ($page) || $this->stagingPage ($page)) {
+			return $page;
+		}
+		
+		// Note that we do not check for other pages in the same folder, as the index is better over an arbitrary page
+		
+		# Define the main page of the site
+		$root = '/';
+		
+		# Traverse up each directory until it is found
+		while ($page != $root) {
+			$directoryAbove = dirname ($page);
+			$try = $directoryAbove . ($directoryAbove == '/' ? '' : '/') . $this->directoryIndex;
+			if ($this->livePage ($try) || $this->stagingPage ($try)) {
+				return $try;
+			}
+			$page = $directoryAbove;	// Try next up; eventually this will get to /
+		}
+		
+		# If for some reason it is not found, return the main page of the site as a fallback
+		return $root . $this->directoryIndex;
+	}
+	
+	
 	# Function to create a version message
-	function versionMessage ($action)
+	private function versionMessage ($action)
 	{
 		# Define the message
 		$versionMessage  = '';
@@ -1300,15 +1454,18 @@ class pureContentEditor
 	
 	
 	# Function to create a logout link
-	function logout ()
+	private function logout ()
 	{
 		# Create the logout link
-		echo "\n<p class=\"information\">" . ($this->logout ? "<a href=\"{$this->logout}\">Please click here to log out.</a>" : 'To log out, close all instances of your web browser.') . '</p>';
+		$html  = "\n<p class=\"information\">" . ($this->logout ? "<a href=\"{$this->logout}\">Please click here to log out.</a>" : 'To log out, close all instances of your web browser.') . '</p>';
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to create a help section
-	function help ()
+	private function help ()
 	{
 		# Create the logout link
 		$html  = "\n\n" . '<div id="purecontenteditorhelp">';
@@ -1333,25 +1490,28 @@ class pureContentEditor
 		$html .= "\n<p>This is version <em>{$this->version}</em> of the pureContentEditor.</p>";
 		$html .= "\n" . '</div>';
 		
-		# Show the HTML
-		echo $html;
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to load pages as if loading normally using pureContent
-	function browse ()
+	private function browse ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Define a message that it cannot be browsed for technical reasons
 		$message = "\n<p class=\"information\">Note: for technical reasons, <strong>this page cannot be " . ($this->pageIsBeingAliased ? 'browsed or ' : '') . "edited</strong> using the pureContentEditor system, as it contains special processing instructions and so has to be treated with special care. " . ($this->pageIsBeingAliased ? "(Technically speaking, the page is being 'aliased' at server level.) " : '') . "Please <a href=\"{$this->page}?message\">contact the server administrator</a> to discuss making changes to this page.</p>";
 		
 		# If the page is being aliased, stop at this point
 		if ($this->pageIsBeingAliased) {
-			echo $message;
-			return false;
+			$html .= $message;
+			return $html;
 		}
 		
 		# Give a message for what file is being browsed, including the timestamp
-		echo $this->versionMessage (__FUNCTION__);
+		$html .= $this->versionMessage (__FUNCTION__);
 		
 		# Check for the presence of PHP instructions or aliasing
 		if ($this->pageContainsPhp) {
@@ -1362,7 +1522,7 @@ class pureContentEditor
 			}
 			
 			# Give a message that the page cannot be edited with this system
-			echo $message;
+			$html .= $message;
 			
 			# Change the working directory, in case there are local includes
 			chdir (str_replace ('\\', '/', dirname ($this->editableFile)));
@@ -1371,31 +1531,40 @@ class pureContentEditor
 		# Import the globals environment into local scope
 		extract ($GLOBALS);
 		
-		# Show the contents
-		echo "\n<hr />\n</div>\n\n\n";
+		# Capture the contents
+		ob_start ();
 		include ($this->editableFile);
-		echo "\n\n\n<div>";
+		$pageContents = ob_get_clean ();
+		
+		# Show the contents
+		$html .= "\n<hr />\n</div>\n\n\n";
+		$html .= $pageContents;
+		$html .= "\n\n\n<div>";
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 /*	breadcrumb editing work - TODO
 	# Function to provide breadcrumb trail editing
-	function breadcrumb ()
+	private function breadcrumb ()
 	{
 		# Run the editing function
-		$this->edit ();
+		$html = $this->edit ();
+		return $html;
 	}
 */
 	
 	
 	# Function to determine whether a location is potentially writable; for instance, if a file would need to go at /path/to/foo/index.html and /path/to/ was all that existed, then the check would be for writability of /path/to/
-	function treesPotentiallyWritable ($location)
+	private function treesPotentiallyWritable ($location, &$html)
 	{
 		# Do the check for each of the roots
 		$roots = array ($this->filestoreRoot, $this->liveSiteRoot);
 		foreach ($roots as $root) {
 			if (!application::directoryIsWritable ($location, $root . '/')) {
-				$this->reportErrors ('Unfortunately, the operation failed - the filestore is not set up properly.', "The path to {$root}{$location} is not writable.");
+				$html .= $this->reportErrors ('Unfortunately, the operation failed - the filestore is not set up properly.', "The path to {$root}{$location} is not writable.");
 				return false;
 			}
 		}
@@ -1406,13 +1575,15 @@ class pureContentEditor
 	
 	
 	# Function to edit the page
-	function edit ()
+	private function edit ()
 	{
-		# Ensure that the tree is writable, or end
-		if (!$this->treesPotentiallyWritable ($this->currentDirectory)) {return false;}
+		# Start the HTML
+		$html = '';
 		
-		# Start the HTML, enclosing it in a div for CSS styling purposes, echoing it directly because of the form
-		echo "\n\n<div id=\"editor\">";
+		# Ensure that the tree is writable, or end
+		if (!$this->treesPotentiallyWritable ($this->currentDirectory, $html)) {
+			return $html;
+		}
 		
 		# Create the form itself
 		$form = new form (array (
@@ -1547,11 +1718,10 @@ class pureContentEditor
 			));
 		}
 		
-		# Finish the HTML
-		echo "\n</div>";
-		
 		# Show and process the form; end if not submitted
-		if (!$result = $form->process ()) {return false;}
+		if (!$result = $form->process ($html)) {
+			return $html;
+		}
 		
 		# Get the submitted content, removing the template mark
 		$content = $result['content'];
@@ -1562,8 +1732,9 @@ class pureContentEditor
 		
 		# Save the file to the filestore or the live site as appropriate
 		if ($approveDirectly) {
-			if (!$this->makeLive ($this->page, $content, $approveDirectly)) {
-				return false;
+			$html .= $this->makeLive ($this->page, $content, $madeLiveOk, $approveDirectly);
+			if (!$madeLiveOk) {
+				return $html;
 			}
 			$message = "A page has been directly made live at:\n{$this->liveSiteUrl}" . $this->chopDirectoryIndex ($this->page);
 			$subjectSuffix = 'page directly made live';
@@ -1571,15 +1742,16 @@ class pureContentEditor
 			
 			# Create the file by supplying the complete file location and filename
 			if (!$filename = application::createFileFromFullPath ($this->filestoreRoot . $this->page, $content, $addStamp = true)) {
-				$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new file in the filestore.', "This new file would have been at $this->page on the live site.");
-				return false;
+				$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new file in the filestore.', "This new file would have been at $this->page on the live site.");
+				return $html;
 			} else {
 				
 				# Log the change
-				$this->logChange ('Submitted ' . ($this->isBlogMode ? 'blog posting' : 'page') . " {$this->page}");
+				$html .= $this->logChange ('Submitted ' . ($this->isBlogMode ? 'blog posting' : 'page') . " {$this->page}");
 				
 				# Construct a confirmation message
-				$message = "A " . ($this->isBlogMode ? 'blog posting' : 'page') . " has been submitted for the location:\n{$this->page}\n\nPlease log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}" . ereg_replace ('^' . $this->filestoreRoot, '', $filename) . '?review';
+				$delimiter = '@';
+				$message = 'A ' . ($this->isBlogMode ? 'blog posting' : 'page') . " has been submitted for the location:\n{$this->page}\n\nPlease log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}" . preg_replace ($delimiter . '^' . addcslashes ($this->filestoreRoot, $delimiter) . $delimiter, '', $filename) . '?review';
 				$subjectSuffix = ($this->isBlogMode ? 'blog posting' : 'page') . ' submitted for moderation';
 			}
 		}
@@ -1587,15 +1759,15 @@ class pureContentEditor
 		# Delete the version on which the pre-edited page was based if it is based on a particular page (which, by definition, lives in the filestore)
 		if ($this->particularPage) {
 			if (!@unlink ($this->editableFile)) {
-				$this->reportErrors ('There was a problem deleting the pre-edited page.', "The filename was {$this->editableFile} .");
-				return false;
+				$html .= $this->reportErrors ('There was a problem deleting the pre-edited page.', "The filename was {$this->editableFile} .");
+				return $html;
 			}
-			$this->logChange ("Pre-edited " . ($this->isBlogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
-			echo "\n<p class=\"success\">The pre-edited " . ($this->isBlogMode ? 'blog posting' : 'page') . " from which this new version was created has been deleted from the filestore.</p>";
+			$html .= $this->logChange ("Pre-edited " . ($this->isBlogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
+			$html .= "\n<p class=\"success\">The pre-edited " . ($this->isBlogMode ? 'blog posting' : 'page') . " from which this new version was created has been deleted from the filestore.</p>";
 		}
 		
 		# Display the submitted content and its HTML version as a confirmation
-		echo $this->showMaterial ($content);
+		$html .= $this->showMaterial ($content);
 		
 		# Select which administrator(s) to e-mail
 		if (isSet ($message)) {
@@ -1603,27 +1775,30 @@ class pureContentEditor
 				case '_none':
 					break;
 				case '_all':
-					$this->sendMail ($this->administrators, $message, $subjectSuffix);
+					$html .= $this->sendMail ($this->administrators, $message, $subjectSuffix);
 					break;
 				default:
-					$this->sendMail ($result['administrators'], $message, $subjectSuffix);
+					$html .= $this->sendMail ($result['administrators'], $message, $subjectSuffix);
 			}
 		}
 		
 		# Delete the template if it is one
 		if ($this->pageIsTemplate ($contents)) {
 			if (!@unlink ($this->editableFile)) {
-				$this->reportErrors ('There was a problem deleting the template file.', "The filename was {$this->editableFile} .");
-				return false;
+				$html .= $this->reportErrors ('There was a problem deleting the template file.', "The filename was {$this->editableFile} .");
+				return $html;
 			}
-			$this->logChange ("Template " . ($this->isBlogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
-			echo "\n<p class=\"success\">The template from which this new " . ($this->isBlogMode ? 'blog posting' : 'page') . " was created has been deleted from the filestore.</p>";
+			$html .= $this->logChange ("Template " . ($this->isBlogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
+			$html .= "\n<p class=\"success\">The template from which this new " . ($this->isBlogMode ? 'blog posting' : 'page') . " was created has been deleted from the filestore.</p>";
 		}
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to provide an access Control List (ACL) to be passed to CKFinder in the format it requires
-	function cKFinderAccessControl ()
+	private function cKFinderAccessControl ()
 	{
 		# End if not using CKFinder
 		if (!$this->CKFinder) {return false;}
@@ -1739,7 +1914,7 @@ class pureContentEditor
 	
 	
 	# Function to determine whether a page is the template
-	function pageIsTemplate ($contents)
+	private function pageIsTemplate ($contents)
 	{
 		# Determine the template in use
 		$templateHtml = ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : $this->newBlogIndexTemplate) : str_replace ('%title', $this->newPageTemplateDefaultTitle, $this->newPageTemplate));
@@ -1750,7 +1925,7 @@ class pureContentEditor
 	
 	
 	# Function to show a page (with the HTML version after)
-	function showMaterial ($content, $class = 'success')
+	private function showMaterial ($content, $class = 'success')
 	{
 		# Construct the HTML
 		$html  = "\n<p class=\"{$class}\">The submitted material was as follows:</p>";
@@ -1778,8 +1953,11 @@ class pureContentEditor
 	
 	
 	# Function to create a new section
-	function section ()
+	private function section ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Get the current folders for the live and staging areas
 		$currentFolders = $this->getCurrentFoldersHere ();
 		
@@ -1851,13 +2029,13 @@ class pureContentEditor
 		));
 		
 		# Show the form and get any results
-		$result = $form->process ();
+		$result = $form->process ($html);
 		
 		# Show the folders which currently exist if there are any
 		if (!$result) {
-			echo "\n<h3>Current folders</h2>";
-			echo $this->listCurrentResources ($currentFolders, 'folders');
-			return false;
+			$html .= "\n<h3>Current folders</h2>";
+			$html .= $this->listCurrentResources ($currentFolders, 'folders');
+			return $html;
 		}
 		
 		# Get the new folder location
@@ -1865,22 +2043,22 @@ class pureContentEditor
 		
 		# Create the directory
 		if (!$this->makeDirectory ($this->filestoreRoot . $this->currentDirectory . $new . '/')) {
-			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the filestore; no index page or section title have been created either because of this.', "The proposed new directory was {$this->currentDirectory}{$new}/");
-			return false;
+			$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the filestore; no index page or section title have been created either because of this.', "The proposed new directory was {$this->currentDirectory}{$new}/");
+			return $html;
 		}
 		
 		# Log the change
-		$this->logChange ("Created folder {$this->currentDirectory}{$new}/");
+		$html .= $this->logChange ("Created folder {$this->currentDirectory}{$new}/");
 		
 		# Create the title file
 		$titleFileLocation = $this->filestoreRoot . $this->currentDirectory . $new . '/' . $this->pureContentTitleFile;
 		if (!application::createFileFromFullPath ($titleFileLocation, $result['title'], $addStamp = true)) {
-			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the title file in the filestore; the new index page has also not been created.');
-			return false;
+			$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the title file in the filestore; the new index page has also not been created.');
+			return $html;
 		}
 		
 		# Log the change
-		$this->logChange ("Created title file {$this->currentDirectory}{$new}{$this->pureContentTitleFile}");
+		$html .= $this->logChange ("Created title file {$this->currentDirectory}{$new}{$this->pureContentTitleFile}");
 		
 		# Determine the template
 		$this->isBlogMode = $this->isBlogMode ($this->currentDirectory . $new . '/');
@@ -1889,22 +2067,24 @@ class pureContentEditor
 		# Create the front page
 		$frontPageLocation = $this->filestoreRoot . $this->currentDirectory . $new . '/' . $this->directoryIndex;
 		if (!application::createFileFromFullPath ($frontPageLocation, $template, $addStamp = true)) {
-			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new directory index in the filestore.');
-			return false;
+			$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new directory index in the filestore.');
+			return $html;
 		}
 		
 		# Log the change
-		$this->logChange ("Created template index page {$this->currentDirectory}{$new}/{$this->directoryIndex}");
+		$html .= $this->logChange ("Created template index page {$this->currentDirectory}{$new}/{$this->directoryIndex}");
 		
-		# Notionally return true
+		# Confirm success
 		application::sendHeader (302, "{$this->editSiteUrl}{$this->currentDirectory}{$new}/{$this->directoryIndex}?edit");
-		echo "<p class=\"success\">The new folder and title file were successfully created. You should now <a href=\"{$new}/{$this->directoryIndex}?edit\">edit the front page of this new section</a>.</p>";
-		return true;
+		$html .= "<p class=\"success\">The new folder and title file were successfully created. You should now <a href=\"{$new}/{$this->directoryIndex}?edit\">edit the front page of this new section</a>.</p>";
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Wrapper function to make a directory, ensuring that windows backslashes are converted and that recursiveness is dealt with
-	function makeDirectory ($newDirectory)
+	private function makeDirectory ($newDirectory)
 	{
 		# Ensuring that / becomes \ on Windows
 		if (strstr (PHP_OS, 'WIN')) {$newDirectory = str_replace ('/', '\\', $newDirectory);}
@@ -1918,7 +2098,7 @@ class pureContentEditor
 	
 	
 	# Function to get the current folders here
-	function getCurrentFoldersHere ()
+	private function getCurrentFoldersHere ()
 	{
 		# Get the live and staging folders
 		$currentFoldersLive = directories::listContainedDirectories ($this->liveSiteRoot . $this->currentDirectory, $this->hideDirectoryNames);
@@ -1934,7 +2114,7 @@ class pureContentEditor
 	
 	
 	# Function to get the current pages here
-	function getCurrentPagesHere ($useDirectory = false, $fullTree = false, $supportedFileTypes = array ('html', 'txt'))
+	private function getCurrentPagesHere ($useDirectory = false, $fullTree = false, $supportedFileTypes = array ('html', 'txt'))
 	{
 		# Determine the directory to use
 		$useDirectory = ($useDirectory ? $useDirectory : $this->currentDirectory);
@@ -1971,10 +2151,11 @@ class pureContentEditor
 		$currentFilesVirtualPages = array ();
 		if ($this->virtualPages) {
 			$this->virtualPages = application::ensureArray ($this->virtualPages);
+			$delimiter = '@';
 			foreach ($this->virtualPages as $virtualPage) {
 				if (substr ($virtualPage, -1) == '$') {$virtualPage = substr ($virtualPage, 0, -1);} // Chop off finalisation terminator
 				$virtualPageDirname = dirname ($virtualPage) . '/';
-				if (ereg ($virtualPageDirname, $this->currentDirectory)) {
+				if (preg_match ($delimiter . addcslashes ($virtualPageDirname, $delimiter) . $delimiter, $this->currentDirectory)) {
 					$virtualPageBasename = basename ($virtualPage);
 					$virtualPageTranslated = $virtualPageBasename;
 					$currentFilesVirtualPages[] = $virtualPageTranslated;
@@ -1993,7 +2174,7 @@ class pureContentEditor
 	
 	
 	# Function to show a current folder listing
-	function listCurrentResources ($currentResources, $type = 'folders')
+	private function listCurrentResources ($currentResources, $type = 'folders')
 	{
 		# Create a list if any exist
 		if (!$currentResources) {return false;}
@@ -2037,7 +2218,7 @@ class pureContentEditor
 	
 	
 	# Function to list current pages (or folders) as a regexp
-	function currentPagesFoldersRegexp ($currentPagesFolders, $allowIndexAliasOverwriting = false)
+	private function currentPagesFoldersRegexp ($currentPagesFolders, $allowIndexAliasOverwriting = false)
 	{
 		# Remove the directory index from the list if it is being aliased and can be 'overwritten'
 		if ($allowIndexAliasOverwriting) {
@@ -2054,10 +2235,15 @@ class pureContentEditor
 	
 	
 	# Function to create a new page
-	function newPage ()
+	private function newPage ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Ensure that the tree is writable, or end
-		if (!$this->treesPotentiallyWritable ($this->currentDirectory)) {return false;}
+		if (!$this->treesPotentiallyWritable ($this->currentDirectory, $html)) {
+			return $html;
+		}
 		
 		# Get the current pages for the live and staging areas
 		$currentPages = $this->getCurrentPagesHere ();
@@ -2138,7 +2324,7 @@ class pureContentEditor
 			$form->heading (3, 'Choose a short one-word file name, followed by .html');
 			$form->input (array (
 				'name'			=> 'newpage',
-				'title'					=> 'New page filename',
+				'title'					=> 'New page address',
 				'description'	=> ($nameIsEditable ? $description : false),
 				'required'				=> true,
 				'regexp'				=> $regexp,
@@ -2147,19 +2333,20 @@ class pureContentEditor
 				'disallow' => ($currentPages ? array ($currentPagesRegexp => "Sorry, <a href=\"{$pageSubmitted}\">a page of that name</a> already exists, as shown in the list below. Please try another.") : false),
 				'placeholder'	=> 'pagetitle.html',
 				'autofocus' => true,
+				'prepend' => htmlspecialchars ($this->currentDirectory) . ' ',
 			));
 		}
 		
 		# Show the form and get any results
-		$result = $form->process ();
+		$result = $form->process ($html);
 		
 		# Show the folders which currently exist if there are any
 		if (!$result) {
 			if (!$this->isBlogMode) {
-				echo "\n<h3>Current pages</h2>";
-				echo $this->listCurrentResources ($currentPages, 'pages');
+				$html .= "\n<h3>Current pages</h2>";
+				$html .= $this->listCurrentResources ($currentPages, 'pages');
 			}
-			return false;
+			return $html;
 		}
 		
 		# Construct the URL for blog mode
@@ -2181,22 +2368,24 @@ class pureContentEditor
 		
 		# Create the file
 		if (!application::createFileFromFullPath ($this->filestoreRoot . $newFile, $template, $addStamp = true)) {
-			$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new file in the filestore.', "The filename was {$this->filestoreRoot}{$newFile} .");
-			return false;
+			$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new file in the filestore.', "The filename was {$this->filestoreRoot}{$newFile} .");
+			return $html;
 		}
 		
 		# Log the change
-		$this->logChange ("Created template " . ($this->isBlogMode ? 'blog posting' : 'page') . " {$newFile}");
+		$html .= $this->logChange ("Created template " . ($this->isBlogMode ? 'blog posting' : 'page') . " {$newFile}");
 		
-		# Notionally return true, but ideally redirect the user directly
+		# Show confirmation, but ideally redirect the user directly
 		application::sendHeader (302, "{$this->editSiteUrl}{$newFile}?edit");
-		echo "<p class=\"success\">The new file was successfully created. You can now <a href=\"{$newFile}?edit\">edit the new " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a>.</p>";
-		return true;
+		$html .= "<p class=\"success\">The new file was successfully created. You can now <a href=\"{$newFile}?edit\">edit the new " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a>.</p>";
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to assembe a new blog posting location
-	function newBlogPostingLocation ($date, $summary, $addIndex = true)
+	private function newBlogPostingLocation ($date, $summary, $addIndex = true)
 	{
 		# Asembe the pieces
 		$currentBlogRoot = $this->getCurrentBlogRoot ();
@@ -2210,10 +2399,11 @@ class pureContentEditor
 	
 	
 	# Function to get the current blog's root
-	function getCurrentBlogRoot ()
+	private function getCurrentBlogRoot ()
 	{
 		# Do a match
-		ereg ('^' . preg_quote ($this->blogTreeRoot) . '([^/]+)/', $this->currentDirectory, $matches);
+		$delimiter = '@';
+		preg_match ($delimiter . '^' . addcslashes ($this->blogTreeRoot, $delimiter) . '([^/]+)/' . $delimiter, $this->currentDirectory, $matches);
 		
 		# Assemble the root
 		$currentBlogRoot = (isSet ($matches[1]) ? $this->blogTreeRoot . $matches[1] . '/' : NULL);
@@ -2224,10 +2414,13 @@ class pureContentEditor
 	
 	
 	# Function to show the pages in the current location
-	function showCurrent ()
+	private function showCurrent ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Show the current location
-		$html  = "\n<p class=\"information\">You are currently in the location: {$this->currentDirectory}</p>";
+		$html .= "\n<p class=\"information\">You are currently in the location: {$this->currentDirectory}</p>";
 		
 		# Switch between normal and blog mode
 		if ($this->isBlogMode && !$this->isBlogTreeRoot) {
@@ -2255,16 +2448,19 @@ class pureContentEditor
 			$html .= "\n<p>You may wish to <a href=\"?newPage\">create a new page</a>" . ($currentPages ? ' if there is not a relevant one already' : '') . '.</p>';
 		}
 		
-		# Show the HTML
-		echo $html;
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to list the users
-	function userList ($forceReload = false)
+	private function userList ($forceReload = false)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Force a reload of the list if necessary
-		if ($forceReload) {$this->users = $this->users ();}
+		if ($forceReload) {$this->users = $this->users ($html);}
 		
 		# Sort the users by username
 		$users = $this->users;
@@ -2274,21 +2470,27 @@ class pureContentEditor
 		$usersFormatted = array ();
 		foreach ($users as $user => $attributes) {
 			if (!isSet ($attributes['Source']) || (isSet ($attributes['Source']) && ($attributes['Source'] != 'Lookup (database)'))) {
-				$user = "<a href=\"?userAmend=$user\">$user</a>";
+				$user = "<a href=\"?userAmend={$user}\">{$user}</a>";
 			}
 			$usersFormatted[$user] = $attributes;
 			$usersFormatted[$user]['Administrator'] = ($attributes['Administrator'] ? 'Yes' : 'No');
 		}
 		
-		# Show the table of current users
-		echo "\n<p class=\"information\">The following are currently registered as users of the editing system.<br />" . ($this->lookup ? "To edit a user's details, click on their username, though please note that those users whose details are sourced from a database lookup cannot be edited here but must be edited in the source database instead." : "To edit a user's details, click on their username.") . '</p>';
-		echo application::htmlTable ($usersFormatted);
+		# Compile the HTML of the table of current users
+		$html .= "\n<p class=\"information\">The following are currently registered as users of the editing system.<br />" . ($this->lookup ? "To edit a user's details, click on their username, though please note that those users whose details are sourced from a database lookup cannot be edited here but must be edited in the source database instead." : "To edit a user's details, click on their username.") . '</p>';
+		$html .= application::htmlTable ($usersFormatted);
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to add a user
-	function userAdd ($firstRun = false)
+	private function userAdd ($firstRun = false)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Create the form itself
 		$form = new form (array (
 			'displayRestrictions' => false,
@@ -2351,7 +2553,9 @@ class pureContentEditor
 		$form->textarea ($this->additionalMessageWidget);
 		
 		# Show the form and get any results or end here
-		if (!$result = $form->process ()) {return;}
+		if (!$result = $form->process ($html)) {
+			return $html;
+		}
 		
 		# Flatten the checkbox result
 		$result['Administrator'] = ($firstRun ? true : ($result['Administrator'][$makeAdministratorText] ? '1' : '0'));
@@ -2360,46 +2564,56 @@ class pureContentEditor
 		$newUser[$result['Username']] = $result;
 		
 		# Insert the data into the CSV file
-		if (!csv::addItem ($this->userDatabase, $newUser, $this->databaseTimestampingMode)) {return false;}
+		if (!csv::addItem ($this->userDatabase, $newUser, $this->databaseTimestampingMode)) {
+			return $html;
+		}
 		
 		#!# If making a user an administrator, any existing permissions should be deleted
 		
 		# Log the change
-		$this->logChange ("Created new user {$result['Username']} with " . ($result['Administrator'] ? 'administrative' : 'editing') . " rights");
+		$html .= $this->logChange ("Created new user {$result['Username']} with " . ($result['Administrator'] ? 'administrative' : 'editing') . " rights");
 		
 		# Signal success, firstly reloading the database
-		$this->users = $this->users ();
-		echo "\n<p class=\"success\">The user {$result['Forename']} {$result['Surname']} ({$result['Username']}) was successfully added" . ($result['Administrator'] ? ', as an administrator. <a href="/"><strong>Continue.</strong></a>' : ".<br />You may now wish to <a href=\"{$this->page}?permissionGrant={$result['Username']}\"><strong>add permissions for that user</strong></a>.") . '</p>';
+		$this->users = $this->users ($html);
+		$html .= "\n<p class=\"success\">The user {$result['Forename']} {$result['Surname']} ({$result['Username']}) was successfully added" . ($result['Administrator'] ? ', as an administrator. <a href="/"><strong>Continue.</strong></a>' : ".<br />You may now wish to <a href=\"{$this->page}?permissionGrant={$result['Username']}\"><strong>add permissions for that user</strong></a>.") . '</p>';
+		
+		# Send mail
 		$message  = "You now have access to the website editing facility. You can log into the pureContentEditor system at {$this->editSiteUrl}/ , using your {$this->authTypeName} username and password. You are recommended to bookmark that address in your web browser.";
 		$message .= "\n\nYour username is: {$result['Username']}";
 		$message .= "\n\nOnce you have logged in, please click on the 'Tips/help' button to see some useful tips.";
 		$message .= "\n\n" . ($result['Administrator'] ? 'You have been granted administrative rights, so you have editable access across the site rather than access to particular areas. You can also create/administer users and permissions.' : 'You will be separately advised of the area(s) of the site which you have permission to alter.');
 		$message .= ($result['message'] ? "\n\n{$result['message']}" : '');
-		$this->sendMail ($result['Username'], $message, $subjectSuffix = 'you now have access');
+		$html .= $this->sendMail ($result['Username'], $message, $subjectSuffix = 'you now have access');
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to amend a user's details
-	function userAmend ()
+	private function userAmend ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Get the username (if supplied)
 		$username = $this->attribute;
 		
 		# If a user has been selected but does not exist, say so
 		if ($username && !isSet ($this->users[$username])) {
-			echo "\n<p class=\"failure\">There is no user {$this->attribute}.</p>";
+			$html .= "\n<p class=\"failure\">There is no user " . htmlspecialchars ($this->attribute) . '.</p>';
 		}
 		
 		# Ensure the user is a local user, as looked-up users cannot be edited
 		if (isSet ($this->users[$username]['Source']) && $this->users[$username]['Source'] == 'Lookup (database)') {
-			echo "\n<p class=\"failure\">This user's details cannot be edited as their information comes from an external database lookup.</p>";
-			return false;
+			$html .= "\n<p class=\"failure\">This user's details cannot be edited as their information comes from an external database lookup.</p>";
+			return $html;
 		}
 		
 		# Show the list of users with the links if no user has been selected
 		if (!$username || !isSet ($this->users[$username])) {
-			$this->userList ();
-			return false;
+			$html .= $this->userList ();
+			return $html;
 		}
 		
 		# Create the form itself
@@ -2454,7 +2668,9 @@ class pureContentEditor
 		$form->textarea ($this->additionalMessageWidget);
 		
 		# Show the form and get any results or end here
-		if (!$result = $form->process ()) {return;}
+		if (!$result = $form->process ($html)) {
+			return $html;
+		}
 		
 		# Flatten the checkbox result
 		$result['Administrator'] = (($this->user == $username) ? true : ($result['Administrator'][$makeAdministratorText] ? '1' : '0'));
@@ -2463,28 +2679,35 @@ class pureContentEditor
 		$user[$username] = $result;
 		
 		# Replace the data in the CSV file (add performs replacement when the key already exists)
-		if (!csv::addItem ($this->userDatabase, $user, $this->databaseTimestampingMode)) {return false;}
+		if (!csv::addItem ($this->userDatabase, $user, $this->databaseTimestampingMode)) {
+			return $html;
+		}
 		
 		# Signal success
-		echo "\n<p class=\"success\">The user {$result['Username']}'s details have been successfully updated.</p>";
+		$html .= "\n<p class=\"success\">The user {$result['Username']}'s details have been successfully updated.</p>";
 		
 		# Log the change
-		$this->logChange ("Amended user details for {$result['Username']} with " . ($result['Administrator'] ? 'administrative' : 'editing') . " rights");
+		$html .= $this->logChange ("Amended user details for {$result['Username']} with " . ($result['Administrator'] ? 'administrative' : 'editing') . " rights");
 		
 		# Flag changes of administrative status, reloading the database at this point
 		if ($this->users[$username]['Administrator'] != $result['Administrator']) {
-			echo "\n<p class=\"success\">The user " . ($result['Administrator'] ? 'now' : 'no longer') . ' has administrative rights.</p>';
+			$html .= "\n<p class=\"success\">The user " . ($result['Administrator'] ? 'now' : 'no longer') . ' has administrative rights.</p>';
 			$message = ($result['Administrator'] ? 'You have been granted administrative rights, so you have editable access across the site rather than access to particular areas. You can also create/administer users and permissions.' : 'Your administrator-level permission for the editing system has now been ended, so you are now an ordinary user. Thank you for your help with administering the website.') . ($result['message'] ? "\n\n{$result['message']}" : '');
-			
-			$this->users = $this->users ();
-			$this->sendMail ($username, $message, $subjectSuffix = 'change of administrator rights');
+			$this->users = $this->users ($html);
+			$html .= $this->sendMail ($username, $message, $subjectSuffix = 'change of administrator rights');
 		}
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to remove a user; there will always be one administrator remaining (the current user) as administrative privileges are required to use this function
-	function userRemove ()
+	private function userRemove ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Create a list of users with unapproved submissions
 		$this->usersWithUnapprovedSubmissions = $this->usersWithUnapprovedSubmissions ();
 		
@@ -2493,9 +2716,9 @@ class pureContentEditor
 		
 		# Prevent the form display if there are no users
 		if (!$deletableUsers) {
-			echo $message = "\n" . '<p class="information">' . ($this->usersWithUnapprovedSubmissions ? 'There remain' : 'There are') . ' no users available for deletion.</p>';
-			echo ($this->usersWithUnapprovedSubmissions ? "<p class=\"information\">(Users having <a href=\"{$this->page}?review\">submissions awaiting approval</a> (which must be approved/deleted first) cannot be deleted.)</p>" : '');
-			return;
+			$html .= $message = "\n" . '<p class="information">' . ($this->usersWithUnapprovedSubmissions ? 'There remain' : 'There are') . ' no users available for deletion.</p>';
+			$html .= ($this->usersWithUnapprovedSubmissions ? "<p class=\"information\">(Users having <a href=\"{$this->page}?review\">submissions awaiting approval</a> (which must be approved/deleted first) cannot be deleted.)</p>" : '');
+			return $html;
 		}
 		
 		# Create the form itself
@@ -2532,12 +2755,8 @@ class pureContentEditor
 		$form->validation ('same', array ('username', 'confirmation'));
 		
 		# Show the form and get any results or end here
-		if (!$result = $form->process ()) {return;}
-		
-		# Check that there is such a user
-		if (!array_key_exists ($result['username'], $deletableUsers)) {
-			echo "\n<p class=\"failure\">There is no such user to delete. (Perhaps you have just deleted the user and then refreshed this page accidentally?)</p>";
-			return false;
+		if (!$result = $form->process ($html)) {
+			return $html;
 		}
 		
 		# Create a list of the user's permissions
@@ -2553,32 +2772,36 @@ class pureContentEditor
 		# Delete the permissions if there are any
 		if ($permissions) {
 			if (!csv::deleteData ($this->permissionsDatabase, $permissions, $this->databaseTimestampingMode)) {
-				$this->reportErrors ('Unfortunately, the operation failed - there was a problem deleting their permissions; the attempt to delete user themselves has therefore been cancelled.');
-				return false;
+				$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem deleting their permissions; the attempt to delete user themselves has therefore been cancelled.');
+				return $html;
 			}
 		}
 		
 		# Log the change
-		$this->logChange ("Deleted all permissions for user {$result['username']}");
+		$html .= $this->logChange ("Deleted all permissions for user {$result['username']}");
 		
 		# Delete the user
 		if (!csv::deleteData ($this->userDatabase, $result['username'], $this->databaseTimestampingMode)) {
-			$this->reportErrors ('Unfortunately, the operation failed - there was a problem deleting the user, although any permissions were deleted successfully.');
-			return false;
+			$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem deleting the user, although any permissions were deleted successfully.');
+			return $html;
 		}
 		
 		# Log the change
-		$this->logChange ("Deleted user {$result['username']}");
+		$html .= $this->logChange ("Deleted user {$result['username']}");
 		
 		# Signal success then show the new list of users
-		echo "\n<p class=\"success\">The user {$result['username']}" . ($permissions ? ' and their permissions were' : ' was') . " successfully deleted.</p>";
-		$this->sendMail ($result['username'], 'Your access to the editing system has now been ended. Thank you for your help with the website.' . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'access ended');
-		$this->userList (true);
-		return true;
+		$html .= "\n<p class=\"success\">The user {$result['username']}" . ($permissions ? ' and their permissions were' : ' was') . " successfully deleted.</p>";
+		$html .= $this->sendMail ($result['username'], 'Your access to the editing system has now been ended. Thank you for your help with the website.' . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'access ended');
+		
+		# Show the user list
+		$html .= $this->userList (true);
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	# Function to get the number of users with unapproved submissions
-	function usersWithUnapprovedSubmissions ()
+	private function usersWithUnapprovedSubmissions ()
 	{
 		# Exclude users with unapproved submissions if necessary
 		$usersWithUnapprovedSubmissions = array ();
@@ -2592,7 +2815,7 @@ class pureContentEditor
 	
 	
 	# Function to create a userlist
-	function userSelectionList ($excludeUsersWithUnapprovedSubmissions = false, $excludeCurrentUser = false, $excludeAdministrators = false, $excludeLookupUsers = false)
+	private function userSelectionList ($excludeUsersWithUnapprovedSubmissions = false, $excludeCurrentUser = false, $excludeAdministrators = false, $excludeLookupUsers = false)
 	{
 		# Compile the user list, excluding users with unapproved submissions and/or administrators if necessary
 		$users = array ();
@@ -2623,7 +2846,7 @@ class pureContentEditor
 	
 	
 	# Function to create an administrator userlist
-	function administratorSelectionList ($enableNoneOption = false, $excludeCurrentUser = true)
+	private function administratorSelectionList ($enableNoneOption = false, $excludeCurrentUser = true)
 	{
 		# Add all administrators or no administrators if required
 		if ($enableNoneOption) {$users['_none'] = 'Inform no administrators';}
@@ -2648,7 +2871,7 @@ class pureContentEditor
 	
 	
 	# Function to create a list of permissions available
-	function scopeSelectionList ($excludeLookupUsers = false)
+	private function scopeSelectionList ($excludeLookupUsers = false)
 	{
 		# Compile the permissions list
 		$permissions = array ();
@@ -2670,19 +2893,22 @@ class pureContentEditor
 	
 	
 	# Function to list the permissions
-	function permissionList ()
+	private function permissionList ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# If there are no permissions assigned, say so
 		if (!$this->permissions) {
-			echo "\n<p class=\"information\">There are no permissions assigned (other than universal permissions available to administrators). You may wish to <a href=\"{$this->page}?permissionGrant\">grant some permissions</a>.</p>";
-			return;
+			$html .= "\n<p class=\"information\">There are no permissions assigned (other than universal permissions available to administrators). You may wish to <a href=\"{$this->page}?permissionGrant\">grant some permissions</a>.</p>";
+			return $html;
 		}
 		
 		# Get the permissions
 		$permissions = $this->permissions;
 		
 		# Start a table of data; NB This way is better in this instance than using htmlTable (), as the data contains HTML which will have entity conversion applied;
-		$html  = "\n<p class=\"information\">The list below shows the permissions which are currently assigned.<br />" . ($this->lookup ? "To edit a permission, click on link in the left-most column, though please note that those users whose permissions are sourced from a database lookup cannot be edited here but must be edited in the source database instead." : '') . '</p>';
+		$html .= "\n<p class=\"information\">The list below shows the permissions which are currently assigned.<br />" . ($this->lookup ? "To edit a permission, click on link in the left-most column, though please note that those users whose permissions are sourced from a database lookup cannot be edited here but must be edited in the source database instead." : '') . '</p>';
 		$html .= "\n" . '<table class="lines">';
 		$html .= "\n\t" . '<tr>';
 		#!# This line is only added because dateLimitation is the only amendable item currently
@@ -2715,34 +2941,39 @@ class pureContentEditor
 		}
 		$html .= "\n" . '</table>';
 		
-		# Show the list
-		echo $html;
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to chop the directory index off a location
-	function chopDirectoryIndex ($location)
+	private function chopDirectoryIndex ($location)
 	{
 		# Return the value
-		return ereg_replace ("/{$this->directoryIndex}$", '/', $location);
+		$delimiter = '|';
+		$location = preg_replace ($delimiter . '/' . addcslashes ($this->directoryIndex, $delimiter) . '$' . $delimiter, '/', $location);
+		return $location;
 	}
 	
 	
 	# Function to grant permission to a user
-	function permissionGrant ($user = false)
+	private function permissionGrant ($user = false)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Determine the available users to which permissions are available to be granted (i.e. all except administrators)
 		$users = $this->userSelectionList (false, false, $excludeAdministrators = true);
 		
 		# If there are no users available, say so
 		if (!$users) {
-			echo "\n<p class=\"information\">There are no non-administrative users, so no permissions can be granted. You may wish to <a href=\"{$this->page}?userAdd\">add a user</a>.</p>";
-			return;
+			$html .= "\n<p class=\"information\">There are no non-administrative users, so no permissions can be granted. You may wish to <a href=\"{$this->page}?userAdd\">add a user</a>.</p>";
+			return $html;
 		}
 		
 		# If a user is selected, but that user does not exist, say so with a non-fatal warning
 		if ($user && !isSet ($users[$user])) {
-			echo "\n<p class=\"failure\">There is no non-administrator user {$user}. Please select a valid user from the list below.</p>";
+			$html .= "\n<p class=\"failure\">There is no non-administrator user " . htmlspecialchars ($user) . '. Please select a valid user from the list below.</p>';
 		}
 		
 		# Determine the scopes, the last being the default
@@ -2754,7 +2985,7 @@ class pureContentEditor
 		
 		# Compile the scopes list and the last in the list
 		foreach ($scopes as $scope => $description) {
-			$scopeList[$scope] = "$description - $scope";
+			$scopeList[$scope] = "{$description} - {$scope}";
 		}
 		$defaultScope = $this->currentDirectory . '*';
 		
@@ -2814,7 +3045,9 @@ class pureContentEditor
 		}
 		
 		# Show the form and get any results or end here
-		if (!$result = $form->process ()) {return;}
+		if (!$result = $form->process ($html)) {
+			return $html;
+		}
 		
 		#!# Check needed if an encompassing permission higher up already exists
 		
@@ -2829,24 +3062,32 @@ class pureContentEditor
 		);
 		
 		# Insert the data into the CSV file
-		if (!csv::addItem ($this->permissionsDatabase, $newPermission, $this->databaseTimestampingMode)) {return false;}
+		if (!csv::addItem ($this->permissionsDatabase, $newPermission, $this->databaseTimestampingMode)) {
+			#!# Inform admin
+			$html .= "\n<p class=\"failure\">There was a problem adding the permission.</p>";
+			return $html;
+		}
 		
 		# Log the change
-		$this->logChange ("Granted user {$result['username']} permission to edit {$result['scope']} " . ($this->disableDateLimitation ? '' : ($result['Startdate'] ? "from {$result['Startdate']} to {$result['Enddate']}" : 'no time limitation')) . ($result['Startdate'] && $result['Self-approval'][$selfApprovalText] ? ' with ' : '') . ($result['Self-approval'][$selfApprovalText] ? 'self-approval allowed' : 'self-approval not allowed'));
+		$html .= $this->logChange ("Granted user {$result['username']} permission to edit {$result['scope']} " . ($this->disableDateLimitation ? '' : ($result['Startdate'] ? "from {$result['Startdate']} to {$result['Enddate']}" : 'no time limitation')) . ($result['Startdate'] && $result['Self-approval'][$selfApprovalText] ? ' with ' : '') . ($result['Self-approval'][$selfApprovalText] ? 'self-approval allowed' : 'self-approval not allowed'));
 		
 		# Construct a time limitation notice
-		$timeLimitationMessage = ($this->disableDateLimitation ? '' : ($result['Startdate'] ? "\n\nYou can make changes between: " . $this->convertTimestamp ($result['Startdate'], $includeTime = false) . ' and ' . $this->convertTimestamp ($result['Enddate'], $includeTime = false) . '.' : ''));
+		$timeLimitationMessage = ($this->disableDateLimitation ? '' : ($result['Startdate'] ? "\n\nYou can make changes between: " . $this->convertTimestamp ($result['Startdate'], $includeTime = false) . ' and ' . $this->convertTimestamp ($result['Enddate'], $includeTime = false) . ' inclusive.' : ''));
 		
 		# Signal success
-		echo "\n<p class=\"success\">The permission {$result['scope']} for the user {$result['username']} was successfully added.</p>";
+		$html .= "\n<p class=\"success\">The permission {$result['scope']} for the user {$result['username']} was successfully added.</p>";
 		$directLink = $this->editSiteUrl . ((substr ($result['scope'], -1) == '*') ? substr ($result['scope'], 0, -1) : $result['scope']);
-		$this->sendMail ($result['username'], "You have been granted permission to make changes to " . $this->convertPermission ($result['scope'], $descriptions = true, $addLinks = false, $lowercaseStart = true) . ".\n\nThe direct link for this in the editing system is:\n{$directLink}\n\nThis means that when you are in that area of the website while using the editor system, you will see an additional button marked 'edit this page' when editing is allowed.". $timeLimitationMessage . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'new area you can edit');
-		return true;
+		
+		# Send the e-mail
+		$html .= $this->sendMail ($result['username'], "You have been granted permission to make changes to " . $this->convertPermission ($result['scope'], $descriptions = true, $addLinks = false, $lowercaseStart = true) . ".\n\nThe direct link for this in the editing system is:\n{$directLink}\n\nThis means that when you are in that area of the website while using the editor system, you will see an additional button marked 'edit this page' when editing is allowed.". $timeLimitationMessage . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'new area you can edit');
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to check the start and end date
-	function checkStartEndDate (&$form)
+	private function checkStartEndDate (&$form)
 	{
 		# Ensure both are completed if one is
 		$form->validation ('all', array ('Startdate', 'Enddate'));
@@ -2878,33 +3119,36 @@ class pureContentEditor
 	
 	
 	# Function to amend an existing permission
-	function permissionAmend ()
+	private function permissionAmend ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Get the permission (if supplied)
 		$permission = $this->attribute;
 		
 		# If a permission has been selected but does not exist, say so
 		if ($permission && !isSet ($this->permissions[$permission])) {
-			echo "\n<p class=\"failure\">There is no permission " . htmlspecialchars ($permission) . '.</p>';
-			return false;
+			$html .= "\n<p class=\"failure\">There is no permission " . htmlspecialchars ($permission) . '.</p>';
+			return $html;
 		}
 		
 		# If the user is an administrator already, deny editability
 		if ($permission && $this->userIsAdministrator ($this->permissions[$permission]['Username'])) {
-			echo "\n<p class=\"failure\">The user concerned is already an administrator so this existing (and anomalous) permission can only be <a href=\"{$this->page}?permissionRevoke={$permission}\">revoked</a>.</p>";
-			return false;
+			$html .= "\n<p class=\"failure\">The user concerned is already an administrator so this existing (and anomalous) permission can only be <a href=\"{$this->page}?permissionRevoke={$permission}\">revoked</a>.</p>";
+			return $html;
 		}
 		
 		# Ensure the user is a local user, as looked-up users cannot be edited
 		if (isSet ($this->permissions[$permission]['Source']) && $this->permissions[$permission]['Source'] == 'Lookup (database)') {
-			echo "\n<p class=\"failure\">This permission cannot be edited as its details come from an external database lookup.</p>";
-			return false;
+			$html .= "\n<p class=\"failure\">This permission cannot be edited as its details come from an external database lookup.</p>";
+			return $html;
 		}
 		
 		# Show the list of users with the links if no permission has been selected
 		if (!$permission || !isSet ($this->permissions[$permission])) {
-			$this->permissionList ();
-			return false;
+			$html .= $this->permissionList ();
+			return $html;
 		}
 		
 		# Create the form itself
@@ -2952,7 +3196,9 @@ class pureContentEditor
 		$form->textarea ($this->additionalMessageWidget);
 		
 		# Show the form and get any results or end here
-		if (!$result = $form->process ()) {return;}
+		if (!$result = $form->process ($html)) {
+			return $html;
+		}
 		
 		# Arrange the array into a keyed result
 		list ($result['Username'], $result['Location']) = explode (':', $result['Permission']);
@@ -2966,7 +3212,11 @@ class pureContentEditor
 		);
 		
 		# Replace the data in the CSV file (add performs replacement when the key already exists)
-		if (!csv::addItem ($this->permissionsDatabase, $amendedPermission, $this->databaseTimestampingMode)) {return false;}
+		if (!csv::addItem ($this->permissionsDatabase, $amendedPermission, $this->databaseTimestampingMode)) {
+			#!# Inform admin
+			$html .= "\n<p class=\"failure\">There was a problem updating the permission.</p>";
+			return $html;
+		}
 		
 		# Cache the original permission then reload the database
 		$originalPermission = $this->permissions[$permission];
@@ -2975,7 +3225,7 @@ class pureContentEditor
 		
 		# Flag changes of administrative status
 		if (($originalPermission === $amendedPermission)) {
-			echo "\n<p class=\"information\">No changes have been made to the permission for the user <em>{$result['Username']}</em> to edit <em>{$result['Location']}</em>, so no action was taken.</p>";
+			$html .= "\n<p class=\"information\">No changes have been made to the permission for the user <em>{$result['Username']}</em> to edit <em>{$result['Location']}</em>, so no action was taken.</p>";
 		} else {
 			
 			# Determine what has changed
@@ -2985,10 +3235,10 @@ class pureContentEditor
 			$selfApprovalHasChanged = ($originalPermission['Self-approval'] != $amendedPermission['Self-approval']);
 			
 			# Log the change
-			$this->logChange ("Amended permission details for {$permission} " . ($dateHasChanged ? (!$dateNowEmpty ? "now time-limited from {$result['Startdate']} to {$result['Enddate']}" : 'now no time limitation') : '') . ($dateHasChanged && $selfApprovalHasChanged ? ' and ' : '') . ($selfApprovalHasChanged ? ($amendedPermission['Self-approval'] ? 'self-approval now allowed' : 'self-approval no longer allowed') : ''));
+			$html .= $this->logChange ("Amended permission details for {$permission} " . ($dateHasChanged ? (!$dateNowEmpty ? "now time-limited from {$result['Startdate']} to {$result['Enddate']}" : 'now no time limitation') : '') . ($dateHasChanged && $selfApprovalHasChanged ? ' and ' : '') . ($selfApprovalHasChanged ? ($amendedPermission['Self-approval'] ? 'self-approval now allowed' : 'self-approval no longer allowed') : ''));
 			
 			# Show an on-screen message
-			echo "\n<p class=\"success\">Changes have been made to the permission for {$result['Username']} to change {$result['Location']}.</p>";
+			$html .= "\n<p class=\"success\">Changes have been made to the permission for {$result['Username']} to change {$result['Location']}.</p>";
 			
 			# Construct the e-mail message and send it
 			$message =
@@ -2996,36 +3246,45 @@ class pureContentEditor
 				. ($this->disableDateLimitation ? '' : ($dateHasChanged ? "\n\n- " . (!$dateNowEmpty ? "You can now make changes from: " . $this->convertTimestamp ($result['Startdate'], $includeTime = false) . ' until ' . $this->convertTimestamp ($result['Enddate'], $includeTime = false) . '.' : 'You no longer have limitations on when you can make changes.') : ''))
 				. ($selfApprovalHasChanged ? "\n\n- " . ($amendedPermission['Self-approval'] ? 'You can now choose to make pages live directly.' : 'The option you had of making pages live directly has been ended - pages require administrator approval.') : '')
 				. ($result['message'] ? "\n\n{$result['message']}" : '');
-			$this->sendMail ($username, $message, $subjectSuffix = 'change to permission');
+			$html .= $this->sendMail ($username, $message, $subjectSuffix = 'change to permission');
 		}
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to list the current user's permissions
-	function permissionMine ()
+	private function permissionMine ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# If the user is an administrator, state that they have universal permission
 		if ($this->userIsAdministrator) {
-			echo "\n<p class=\"success\">As you are an administrator, you have editable access across the site rather than access to particular areas.</p>";
-			return;
+			$html .= "\n<p class=\"success\">As you are an administrator, you have editable access across the site rather than access to particular areas.</p>";
+			return $html;
 		}
 		
 		# If no permissions, say so
 		if (!$this->currentUserPermissions) {
-			echo "\n<p>Although you have access to this facility as a whole, you do not currently have permission to edit any areas of the site.</p>";
-			return;
+			$html .= "\n<p>Although you have access to this facility as a whole, you do not currently have permission to edit any areas of the site.</p>";
+			return $html;
 		}
 		
 		# Convert the permissions to a human-readable form
 		$currentUserPermissions = $this->convertPermissionsList ($this->currentUserPermissions);
 		
-		# Show the permissions
-		echo "\n<p>You have permission to make changes to the following at present:</p>" . application::htmlUl ($currentUserPermissions);
+		# Compile the HTML
+		$html .= "\n<p>You have permission to make changes to the following at present:</p>" . application::htmlUl ($currentUserPermissions);
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to get the current user's permissions; note this does not deal with the special case of administrators
-	function currentUserPermissions ()
+	private function currentUserPermissions ()
 	{
 		# Get the permissions
 		$permissions = array ();
@@ -3051,7 +3310,7 @@ class pureContentEditor
 	
 	
 	# Function to convert a list of permissions into a list of areas
-	function convertPermissionsList ($permissions, $keysOnly = false)
+	private function convertPermissionsList ($permissions, $keysOnly = false)
 	{
 		# Loop through the permissions
 		$readablePermissions = array ();
@@ -3071,7 +3330,7 @@ class pureContentEditor
 	
 	
 	# Function to convert a single permission
-	function convertPermission ($location, $descriptions = true, $addLinks = true, $lowercaseStart = false)
+	private function convertPermission ($location, $descriptions = true, $addLinks = true, $lowercaseStart = false)
 	{
 		# Get the title file if relevant
 		$sectionTitle = $this->getSectionTitle ($location);
@@ -3111,7 +3370,7 @@ class pureContentEditor
 	
 	
 	# Function to reformat a date limitation
-	function formatDateLimitation ($start, $end)
+	private function formatDateLimitation ($start, $end)
 	{
 		# If no start and end, return an empty string
 		if (!$start && !$end) {return '<span class="comment">-</span>';}
@@ -3122,19 +3381,19 @@ class pureContentEditor
 	
 	
 	# Function to reformat a date in SQL format
-	function formatSqlDate ($date)
+	private function formatSqlDate ($date)
 	{
 		# Attempt to split out the year, month and date
 		if (!list ($year, $month, $day) = explode ('-', $date)) {return $date;}
 		
 		# Else return the full date, with the date and month formatted sensibly
 		$months = array (1 => 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',);
-		return (int) $day . '/' . $months[(int) $month] . "/$year";
+		return (int) $day . '/' . $months[(int) $month] . "/{$year}";
 	}
 	
 	
 	# Function to get contents of the title file for a section
-	function getSectionTitle ($location)
+	private function getSectionTitle ($location)
 	{
 		# Chop off the * if necessary
 		if (substr ($location, -1) == '*') {$location = substr ($location, 0, -1);}
@@ -3166,7 +3425,7 @@ class pureContentEditor
 	
 	
 	# Function to make a timestamp
-	function makeTimestamp ()
+	private function makeTimestamp ()
 	{
 		# Return the timestamp
 		return date ('Ymd-His');
@@ -3174,7 +3433,7 @@ class pureContentEditor
 	
 	
 	# Function to convert a timestamp to a string usable by strtotime
-	function convertTimestamp ($timestamp, $includeTime = true)
+	private function convertTimestamp ($timestamp, $includeTime = true)
 	{
 		# Convert the timestamp
 		$timestamp = preg_replace ('/-(\d{2})(\d{2})(\d{2})$/D', ' $1:$2:$3', $timestamp);
@@ -3191,15 +3450,18 @@ class pureContentEditor
 	
 	
 	# Function to remove a permission
-	function permissionRevoke ()
+	private function permissionRevoke ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Get the permissions from the CSV file
 		$permissions = $this->scopeSelectionList ($excludeLookupUsers = true);
 		
 		# If there are no permissions assigned, say so
 		if (!$permissions) {
-			echo "\n<p class=\"information\">There are no permissions assigned (other than universal permissions available to administrators). You may wish to <a href=\"{$this->page}?permissionGrant\">grant some permissions</a>.</p>";
-			return;
+			$html .= "\n<p class=\"information\">There are no permissions assigned (other than universal permissions available to administrators). You may wish to <a href=\"{$this->page}?permissionGrant\">grant some permissions</a>.</p>";
+			return $html;
 		}
 		
 		# Get the permission (if supplied)
@@ -3207,16 +3469,15 @@ class pureContentEditor
 		
 		# If a permission has been selected but does not exist, say so
 		if ($permission && !isSet ($permissions[$permission])) {
-			echo "\n<p class=\"failure\">There is no permission " . htmlspecialchars ($permission) . '.</p>';
-			return false;
+			$html .= "\n<p class=\"failure\">There is no permission " . htmlspecialchars ($permission) . '.</p>';
+			return $html;
 		}
 		
 		# Ensure the user is a local user, as looked-up users cannot be edited
 		if (isSet ($permissions[$permission]['Source']) && $permissions[$permission]['Source'] == 'Lookup (database)') {
-			echo "\n<p class=\"failure\">This permission cannot be edited as its details come from an external database lookup.</p>";
-			return false;
+			$html .= "\n<p class=\"failure\">This permission cannot be edited as its details come from an external database lookup.</p>";
+			return $html;
 		}
-		
 		
 		# Create the form itself
 		$form = new form (array (
@@ -3257,25 +3518,32 @@ class pureContentEditor
 		}
 		
 		# Show the form and get any results or end here
-		if (!$result = $form->process ()) {return;}
+		if (!$result = $form->process ($html)) {
+			return $html;
+		}
 		
 		# Delete the entry
-		if (!csv::deleteData ($this->permissionsDatabase, $result['key'], $this->databaseTimestampingMode)) {return false;}
+		if (!csv::deleteData ($this->permissionsDatabase, $result['key'], $this->databaseTimestampingMode)) {
+			$html .= "\n<p class=\"failure\">There was a problem revoking the permission.</p>";
+			return $html;
+		}
 		
 		# Signal success
-		echo "\n<p class=\"success\">The permission {$scope} for the user " . $this->convertUsername ($result['username']) . ' was successfully deleted.</p>';
+		$html .= "\n<p class=\"success\">The permission {$scope} for the user " . $this->convertUsername ($result['username']) . ' was successfully deleted.</p>';
 		
 		# Log the change
-		$this->logChange ("Revoked user {$result['username']}'s permission to edit {$scope}");
+		$html .= $this->logChange ("Revoked user {$result['username']}'s permission to edit {$scope}");
 		
 		# Send an e-mail (but don't reload the database!)
-		$this->sendMail ($result['username'], "Your permission to make changes to " . $this->convertPermission ($scope, $descriptions = true, $addLinks = false, $lowercaseStart = true) . ' has now been ended. Thank you for your help with this section.' . ($this->userIsAdministrator ($result['username']) ? ' However, you remain an administrator so have editable access across the site.' : '') . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'removal of editing rights for an area');
-		return true;
+		$html .= $this->sendMail ($result['username'], "Your permission to make changes to " . $this->convertPermission ($scope, $descriptions = true, $addLinks = false, $lowercaseStart = true) . ' has now been ended. Thank you for your help with this section.' . ($this->userIsAdministrator ($result['username']) ? ' However, you remain an administrator so have editable access across the site.' : '') . ($result['message'] ? "\n\n{$result['message']}" : ''), $subjectSuffix = 'removal of editing rights for an area');
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to determine submissions in the same location
-	function moreSubmissionsInSameLocation ($currentSubmission, $earlierFilesOnly = true, $excludeCurrent = true, $organiseByUser = true)
+	private function moreSubmissionsInSameLocation ($currentSubmission, $earlierFilesOnly = true, $excludeCurrent = true, $organiseByUser = true)
 	{
 		# Get the current file location
 		$fileLocation = $this->submissions[$currentSubmission]['directory'] . $this->submissions[$currentSubmission]['filename'];
@@ -3314,7 +3582,7 @@ class pureContentEditor
 	
 	
 	# Function to get a purely numeric timestamp
-	function stringToNumericTimestamp ($string)
+	private function stringToNumericTimestamp ($string)
 	{
 		# Return the value as an integer
 		return (str_replace ('-', '', $string)) + 0;	// +0 reliably casts as an integer
@@ -3322,18 +3590,23 @@ class pureContentEditor
 	
 	
 	# Function to list and review submissions
-	function review ($filename)
+	private function review ($filename)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Show the list if required
 		$showList = (!$filename || ($filename && (!isSet ($this->submissions[$filename]))));
 		if ($showList) {
 			#!# Perhaps have a mode which forces clearance of template files that have been left behind
-			echo $this->listSubmissions ($reload = true);
-			return;
+			$html .= $this->listSubmissions ($reload = true);
+			return $html;
 		}
 		
 		# Ensure that the tree is writable, or end
-		if (!$this->treesPotentiallyWritable ($this->currentDirectory)) {return false;}
+		if (!$this->treesPotentiallyWritable ($this->currentDirectory, $html)) {
+			return $html;
+		}
 		
 		# Create the form itself
 		$form = new form (array (
@@ -3403,12 +3676,12 @@ class pureContentEditor
 		}
 		
 		# If the form is not processed, show the page
-		if (!$result = $form->process ()) {
+		if (!$result = $form->process ($html)) {
 			$fileOnServer = $this->filestoreRoot . $filename;
 			chdir (str_replace ('\\', '/', dirname ($fileOnServer)));
-			echo "\n<hr />";
-			echo $this->showMaterial ($this->editableFileContents, 'information');
-			return;
+			$html .= "\n<hr />";
+			$html .= $this->showMaterial ($this->editableFileContents, 'information');
+			return $html;
 		}
 		
 		# Flag to mail the user if explicitly requested or an additional message added
@@ -3426,30 +3699,32 @@ class pureContentEditor
 		if ($moreSubmissionsInSameLocation) {
 			foreach ($moreSubmissionsInSameLocation as $user => $submissions) {
 				foreach ($submissions as $moreSubmissionsFilename => $attributes) {
-					if (!$this->reject ($moreSubmissionsFilename, $silentMode = true)) {
-						return false;	// Don't continue if there's a problem
+					$html .= $this->reject ($moreSubmissionsFilename, $rejectedOk, $silentMode = true);
+					if (!$rejectedOk) {
+						return $html;	// Don't continue if there's a problem
 					}
 				}
 			}
-			echo "\n<p class=\"success\">The earlier submissions of this page were deleted successfully.</p>";
+			$html .= "\n<p class=\"success\">The earlier submissions of this page were deleted successfully.</p>";
 		}
 		
 		# Take action depending on the result
 		switch ($result['action']) {
 			case 'approve-message':
 			case 'approve':
-				$this->makeLive ($filename, $this->editableFileContents, $directly = false, (isSet ($result['location']) ? $result['location'] : false), $mailUser, $result['message'], $thisUserMoreSubmissionsTotal);
+				$html .= $this->makeLive ($filename, $this->editableFileContents, $madeLiveOk, $directly = false, (isSet ($result['location']) ? $result['location'] : false), $mailUser, $result['message'], $thisUserMoreSubmissionsTotal);
+				if ($this->submissions) {$html .= $this->listSubmissions ($reload = true);}
 				break;
 				
 			case 'reject-message':
 			case 'reject':
-				$this->reject ($filename, $silentMode = false, $mailUser, $result['message'], $thisUserMoreSubmissionsTotal);
+				$html .= $this->reject ($filename, $rejectedOk, $silentMode = false, $mailUser, $result['message'], $thisUserMoreSubmissionsTotal);
 				break;
 				
 			case 'edit':
 				# Redirect the user to the new page; take no other action. The previous version will need to be deleted manually by the administrator
 				application::sendHeader (302, "{$this->editSiteUrl}{$filename}?edit");
-				echo "\n<p><a href=\"{$filename}?edit\">Click here to edit the " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a> (as your browser has not redirected you automatically).</p>";
+				$html .= "\n<p><a href=\"{$filename}?edit\">Click here to edit the " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a> (as your browser has not redirected you automatically).</p>";
 				break;
 				
 			case 'message':
@@ -3457,15 +3732,21 @@ class pureContentEditor
 				$file = $this->submissions[$filename];
 				$fileLocation = $file['directory'] . $file['filename'];
 				$compiledMessage = 'With regard to the ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . html_entity_decode ($file['title'] ? " ({$file['title']})" : ' ') . ", on " . $this->convertTimestamp ($file['timestamp']) . ":\n\n{$result['message']}";
-				$this->sendMail ($this->submissions[$filename]['username'], $compiledMessage, 'message regarding a ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' you submitted');
+				$html .= $this->sendMail ($this->submissions[$filename]['username'], $compiledMessage, 'message regarding a ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' you submitted');
 				break;
 		}
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to reject a file
-	function reject ($filename, $silentMode = false, $mailUser = false, $extraMessage = false, $moreSubmissionsByThisUser = false)
+	private function reject ($filename, &$rejectedOk, $silentMode = false, $mailUser = false, $extraMessage = false, $moreSubmissionsByThisUser = false)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Shortcuts
 		$fileOnServer = $this->filestoreRoot . $filename;
 		$fileLocation = $this->submissions[$filename]['directory'] . $this->submissions[$filename]['filename'];
@@ -3478,8 +3759,9 @@ class pureContentEditor
 			
 			# Create the directory if necessary
 			if (!$this->makeDirectory (dirname ($archiveLocationFromRoot))) {
-				$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the archive.', "The proposed new directory was {$archiveLocationFromRoot} .");
-				return false;
+				$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the archive.', "The proposed new directory was {$archiveLocationFromRoot} .");
+				$rejectedOk = false;
+				return $html;
 			}
 			
 			# Move the file
@@ -3490,43 +3772,56 @@ class pureContentEditor
 		
 		# Show outcome
 		if (!$success) {
-			$this->reportErrors ('There was a problem ' . ($this->archiveRoot ? 'archiving' : 'deleting') . ' the rejected file.', "The filename was {$fileOnServer} .");
-			return false;
+			$html .= $this->reportErrors ('There was a problem ' . ($this->archiveRoot ? 'archiving' : 'deleting') . ' the rejected file.', "The filename was {$fileOnServer} .");
+			$rejectedOk = false;
+			return $html;
 		}
 		
 		# Log the change
-		$this->logChange ("Submitted file {$fileLocation} deleted");
+		$html .= $this->logChange ("Submitted file {$fileLocation} deleted");
 		
 		# End if silent mode
-		if ($silentMode) {return true;}
+		if ($silentMode) {
+			$rejectedOk = true;
+			return $html;
+		}
 		
 		# Reload the submissions database, first caching the submitting user
 		$submission = $this->submissions[$filename];
 		$fileLocation = $submission['directory'] . $submission['filename'];
 		$this->submissions = $this->submissions ($excludeTemplateFiles = true);
 		
-		# Confirm success and relist the submissions if appropriate
-		echo "\n<p class=\"success\">The file {$fileLocation} was deleted successfully.</p>";
-		echo "\n" . '<p><a href="/?review"><strong>Revert to browsing</strong></a>' . ($this->submissions ? ', or continue moderating pages.' : '.') . '</p>';
-		#!# Reloading is failing here sometimes
-		if ($this->submissions) {echo $this->listSubmissions ($reload = false);}
-		echo "\n<hr />";
+		# Regenerate the menu so that the menu links do not reference the now-deleted file
+		$this->menuHtml = $this->generateMenu ($this->page);
+		
+		# Confirm success
+		$html .= "\n<p class=\"success\">The file {$fileLocation} was deleted successfully.</p>";
 		
 		# Mail the user if required
 		if ($mailUser) {
 			$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . html_entity_decode ($submission['title'] ? " ('{$submission['title']}')" : ' ') . ', on ' . $this->convertTimestamp ($submission['timestamp']) . ', has been rejected and thus deleted.';
 			if ($moreSubmissionsByThisUser) {$compiledMessage .= "\n\nThe earlier " . ($moreSubmissionsByThisUser == 1 ? 'version of this page that you submitted has' : 'versions of this page that you submitted have') . ' also been discarded.';}
 			if ($extraMessage) {$compiledMessage .= "\n\n{$extraMessage}";}
-			$this->sendMail ($submission['username'], $compiledMessage, $subjectSuffix = ($this->isBlogMode ? 'blog posting' : 'page') . ' submission rejected');
+			$html .= $this->sendMail ($submission['username'], $compiledMessage, $subjectSuffix = ($this->isBlogMode ? 'blog posting' : 'page') . ' submission rejected');
 		}
+		
+		# Relist the submissions if appropriate
+		#!# Reloading is failing here sometimes
+		if ($this->submissions) {$html .= $this->listSubmissions ($reload = false);}
+		
+		# Signal success
+		$rejectedOk = true;
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to approve a file (i.e. make live)
-	function makeLive ($submittedFile, $contents, $directly = false, $location = false, $mailUser = false, $extraMessage = false, $moreSubmissionsByThisUser = false)
+	private function makeLive ($submittedFile, $contents, &$madeLiveOk = false, $directly = false, $respecifiedLocation = false, $mailUser = false, $extraMessage = false, $moreSubmissionsByThisUser = false)
 	{
 		# Construct the file location
-		$newFileLiveLocation = ($directly ? $submittedFile : ($location ? $location . (substr ($location, -1) == '/' ? 'index.html' : '') : $this->submissions[$submittedFile]['directory'] . $this->submissions[$submittedFile]['filename']));
+		$newFileLiveLocation = ($directly ? $submittedFile : ($respecifiedLocation ? $respecifiedLocation . (substr ($respecifiedLocation, -1) == '/' ? 'index.html' : '') : $this->submissions[$submittedFile]['directory'] . $this->submissions[$submittedFile]['filename']));
 		$newFileLiveLocationFromRoot = $this->liveSiteRoot . $newFileLiveLocation;
 		
 		# Backup replaced live files if necessary
@@ -3538,31 +3833,34 @@ class pureContentEditor
 				
 				# Create the directory if necessary
 				if (!$this->makeDirectory (dirname ($archiveLocationFromRoot))) {
-					$this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the archive.', "The proposed new directory was {$archiveLocationFromRoot} .");
-					return false;
+					$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating folders in the archive.', "The proposed new directory was {$archiveLocationFromRoot} .");
+					$madeLiveOk = false;
+					return $html;
 				}
 				
 				# Copy the file across
 				if (!@copy ($newFileLiveLocationFromRoot, $archiveLocationFromRoot)) {
-					$this->reportErrors ('The new ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' was not approved, as there was a problem archiving the existing file on the live site of the same name.', "This archived file would have been at {$archiveLocationFromRoot} .");
-					return false;
+					$html .= $this->reportErrors ('The new ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' was not approved, as there was a problem archiving the existing file on the live site of the same name.', "This archived file would have been at {$archiveLocationFromRoot} .");
+					$madeLiveOk = false;
+					return $html;
 				}
-				$this->logChange ("Archived existing file on the live site $newFileLiveLocation to $archiveLocationFromRoot");
+				$html .= $this->logChange ("Archived existing file on the live site $newFileLiveLocation to $archiveLocationFromRoot");
 			}
 		}
 		
 		# Install the new file on the live site
 		if (!$installNewFileResult = application::createFileFromFullPath ($newFileLiveLocationFromRoot, $contents, $addStamp = false)) {
-			$this->reportErrors ('There was a problem installing the approved file on the live site.', "This new file would have been at $newFileLiveLocation on the live site.");
-			return false;
+			$html .= $this->reportErrors ('There was a problem installing the approved file on the live site.', "This new file would have been at $newFileLiveLocation on the live site.");
+			$madeLiveOk = false;
+			return $html;
 		}
-		$this->logChange (($directly ? 'New ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' directly' : "Submitted file $submittedFile approved and") . " saved to $newFileLiveLocation on live site");
+		$html .= $this->logChange (($directly ? 'New ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' directly' : "Submitted file $submittedFile approved and") . " saved to $newFileLiveLocation on live site");
 		$newFileLiveLocationChopped = $this->chopDirectoryIndex ($newFileLiveLocation);
 		if ($newFileLiveLocationChopped == '/') {$newFileLiveLocationChopped = '';}
 		if ($this->isBlogMode) {
 			$currentBlogRoot = $this->getCurrentBlogRoot ();
 		}
-		echo "<p class=\"success\">The " . ($this->isBlogMode ? 'blog posting' : 'page') . ' has been approved and is now online, at: ' . ($this->isBlogMode ? "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$currentBlogRoot}\">{$this->liveSiteUrl}{$currentBlogRoot}</a> or at the posting-specific location of: " : '') . "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$newFileLiveLocationChopped}\">{$this->liveSiteUrl}{$newFileLiveLocationChopped}</a>.</p>";
+		$html .= "<p class=\"success\">The " . ($this->isBlogMode ? 'blog posting' : 'page') . ' has been approved and is now online, at: ' . ($this->isBlogMode ? "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$currentBlogRoot}\">{$this->liveSiteUrl}{$currentBlogRoot}</a> or at the posting-specific location of: " : '') . "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$newFileLiveLocationChopped}\">{$this->liveSiteUrl}{$newFileLiveLocationChopped}</a>.</p>";
 		
 		# Mail the user if required
 		if ($mailUser) {
@@ -3570,41 +3868,53 @@ class pureContentEditor
 			$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$newFileLiveLocation}" . html_entity_decode ($this->submissions[$submittedFile]['title'] ? " ('{$this->submissions[$submittedFile]['title']}')" : ' ') . ", on {$fileTimestamp}, has been approved and is now online, at:\n\n{$this->liveSiteUrl}{$newFileLiveLocationChopped}";
 			if ($moreSubmissionsByThisUser) {$compiledMessage .= "\n\nThe earlier " . ($moreSubmissionsByThisUser == 1 ? 'version of this page that you submitted has' : 'versions of this page that you submitted have') . ' been discarded.';}
 			if ($extraMessage) {$compiledMessage .= "\n\n{$extraMessage}";}
-			$this->sendMail ($this->submissions[$submittedFile]['username'], $compiledMessage, ($this->isBlogMode ? 'blog posting' : 'page') . ' approved');
+			$html .= $this->sendMail ($this->submissions[$submittedFile]['username'], $compiledMessage, ($this->isBlogMode ? 'blog posting' : 'page') . ' approved');
 		}
 		
 		# Delete the staging file and log the change
 		if (!$directly) {
 			if (!@unlink ($this->filestoreRoot . $submittedFile)) {
-				$this->reportErrors ('There was a problem deleting the originally submitted staging file.', "The filename was {$this->filestoreRoot}{$submittedFile} .");
-				return false;
+				$html .= $this->reportErrors ('There was a problem deleting the originally submitted staging file.', "The filename was {$this->filestoreRoot}{$submittedFile} .");
+				$madeLiveOk = false;
+				return $html;
 			}
-			$this->logChange ("Originally submitted (but now live) file {$this->filestoreRoot}{$submittedFile} deleted from filestore.");
+			$html .= $this->logChange ("Originally submitted (but now live) file {$this->filestoreRoot}{$submittedFile} deleted from filestore.");
 		}
 		
-		# Return the cached result
-		return ($installNewFileResult);
+		# Set the cached result
+		$madeLiveOk = ($installNewFileResult);
+		
+		# If the location has been respecified, regenerate the menu
+		if ($respecifiedLocation) {
+			$this->menuHtml = $this->generateMenu ($respecifiedLocation);
+		}
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	
 	# Wrapper function to send the administrator an e-mail listing errors
-	function reportErrors ($errors, $privateInfo = false)
+	private function reportErrors ($errors, $privateInfo = false)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Ensure the errors are an array
 		$errors = application::ensureArray ($errors);
 		
 		# Show the errors
 		foreach ($errors as $error) {
-			echo "\n<p class=\"failure\">$error</p>";
+			$html .= "\n<p class=\"failure\">{$error}</p>";
 		}
 		
 		# Do not attempt to mail the administrator if no administrator address is available (which could be why an error is being thrown)
-		if (!$this->serverAdministrator) {return false;}
+		if (!$this->serverAdministrator) {return $html;}
 		
 		# Construct the message; note that $this->users may not yet exist so it can't be used to get the user's real name
 		$introduction = 'The following ' . (count ($errors) == 1 ? 'problem was' : 'problems were') . ' encountered' . ($this->user ? " (by user {$this->user})" : '') . ':';
-		$message = "\nDear webserver administrator,\n\n$introduction\n\n" . '- ' . implode ("\n\n- ", $errors);
+		$message = "\nDear webserver administrator,\n\n{$introduction}\n\n" . '- ' . implode ("\n\n- ", $errors);
 		
 		# If there is provide information, add this
 		if ($privateInfo) {$message .= "\n\nAdditional diagnostic information:\n" . $privateInfo;}
@@ -3613,15 +3923,22 @@ class pureContentEditor
 		$message .= "\n\n\nThis message was generated from the following URL:\n" . $_SERVER['_PAGE_URL'];
 		
 		# Send the mail
-		if ($this->sendMail ($this->serverAdministrator, $message, $subjectSuffix = (count ($errors) == 1 ? 'error' : 'errors') . ' occured - please investigate', $showMessageOnScreen = false)) {
-			echo '<p class="information">The server administrator has been informed about ' . (count ($errors) == 1 ? 'this error' : 'these errors') . '.</p>';
+		$html .= $this->sendMail ($this->serverAdministrator, $message, $subjectSuffix = (count ($errors) == 1 ? 'error' : 'errors') . ' occured - please investigate', false, $showMessageOnScreen = false, $messageSentOk);
+		if ($messageSentOk) {
+			$html .= '<p class="information">The server administrator has been informed about ' . (count ($errors) == 1 ? 'this error' : 'these errors') . '.</p>';
 		}
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Wrapper function to send e-mail
-	function sendMail ($users, $message, $subjectSuffix = false, $showMessageOnScreen = true, $includeUrl = false)
+	private function sendMail ($users, $message, $subjectSuffix = false, $includeUrl = false, $showMessageOnScreen = true, &$messageSentOk = false)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Start an array of users and their names
 		$to = array ();
 		$name = array ();
@@ -3661,39 +3978,45 @@ class pureContentEditor
 		
 		# At this point, perform check that the to(s) and from exist before trying to send it!
 		if (!$to) {
-			return true;
+			$messageSentOk = true;
+			return $html;
 		}
 		
 		# Compile the recipients
 		$recipientList = implode (', ', $to);
 		
-		# Send the mail; ensure the editSiteUrl is set (it may not be if this function is being thrown by reportErrors ()
+		# Send the mail; ensure the editSiteUrl is set (it may not be if this function is being thrown by reportErrors())
 		$subject = ($this->websiteName ? $this->websiteName : $this->liveSiteUrl) . ' website editing facility' . ($subjectSuffix ? ': ' . $subjectSuffix : '');
 		if (!application::utf8Mail ($recipientList, $subject, wordwrap ($message), $fromHeader)) {
-			echo "\n<p class=\"failure\">There was a problem sending an e-mail to the user.</p>";
-			return false;
+			$html .= "\n<p class=\"failure\">There was a problem sending an e-mail to the user.</p>";
+			$messageSentOk = false;
+			return $html;
 		}
 		
 		# Print the message if necessary
 		if ($showMessageOnScreen) {
-			echo "\n<p class=\"success\">The following e-mail message has been sent:</p>";
-			echo "\n<blockquote><pre>";
-			echo "\n" . htmlspecialchars ($fromHeader);
-			echo "\n<strong>" . wordwrap ('To: ' . htmlspecialchars ($recipientList)) . '</strong>';
-			echo "\n" . wordwrap ('Subject: ' . htmlspecialchars ($subject)) . '</strong>';
-			echo "\n\n" . wordwrap (htmlspecialchars ($message));
-			echo "\n</pre></blockquote>";
+			$html .= "\n<p class=\"success\">The following e-mail message has been sent:</p>";
+			$html .= "\n<blockquote><pre>";
+			$html .= "\n" . htmlspecialchars ($fromHeader);
+			$html .= "\n<strong>" . wordwrap ('To: ' . htmlspecialchars ($recipientList)) . '</strong>';
+			$html .= "\n" . wordwrap ('Subject: ' . htmlspecialchars ($subject)) . '</strong>';
+			$html .= "\n\n" . wordwrap (htmlspecialchars ($message));
+			$html .= "\n</pre></blockquote>";
 		}
 		
 		# Signal success
-		return true;
+		$messageSentOk = true;
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to return a formatted e-mail string usable in mail (), given the username
-	function formatEmailAddress ($user)
+	private function formatEmailAddress ($user)
 	{
 		# Ensure the user exists
+		#!# This means an empty result being set in the caller
 		if (!isSet ($this->users[$user])) {return false;}
 		
 		# Get the address
@@ -3711,13 +4034,17 @@ class pureContentEditor
 	
 	
 	# Function to get a description of the file
-	function fileDescription ($filename)
+	private function fileDescription ($filename)
 	{
 		# Get the file metadata
 		$fileData = $this->submissions[$filename];
 		
 		# Section title file
-		if ($fileData['filename'] == $this->pureContentTitleFile) {return "section title for the directory <a target=\"_blank\" href=\"{$fileData['directory']}\">{$fileData['directory']}</a>";}
+		if ($fileData['filename'] == $this->pureContentTitleFile) {
+			
+			$description = "section title for the section <a target=\"_blank\" href=\"{$fileData['directory']}\">{$fileData['directory']}</a>";
+			return $description;
+		}
 		
 		# Submenu file
 		if ($fileData['filename'] == $this->pureContentMenuFile) {return 'contents of the submenu list';}
@@ -3729,8 +4056,9 @@ class pureContentEditor
 		return 'submission';
 	}
 	
+	
 	# Function to list the awaiting submissions
-	function listSubmissions ($reload = false)
+	private function listSubmissions ($reload = false)
 	{
 		# Reload the list, excluding template files
 		#!# Set excludeTemplateFiles to false when they are created only in memory while editing
@@ -3738,8 +4066,8 @@ class pureContentEditor
 		
 		# If there are no files awaiting review, say so and finish
 		if (!$this->submissions) {
-			echo "\n<p class=\"information\">There are no pages awaiting review at present.</p>";
-			return;
+			$html  = "\n<p class=\"success\">There are no pages awaiting review at present.</p>";
+			return $html;
 		}
 		
 		# Start a table of data
@@ -3774,7 +4102,7 @@ class pureContentEditor
 	
 	
 	# Function to get a human-readable username
-	function convertUsername ($user, $withUserId = true, $indicateAdministrator = false)
+	private function convertUsername ($user, $withUserId = true, $indicateAdministrator = false)
 	{
 		# Return the username without modification if they have gone
 		if (!isSet ($this->users[$user])) {return $user;}
@@ -3785,10 +4113,10 @@ class pureContentEditor
 	
 	
 	# Function to get all submissions
-	function submissions ($excludeTemplateFiles = false)
+	private function submissions ($excludeTemplateFiles = false)
 	{
 		# Determine whether to exclude files the size of the template
-		$excludeFileTemplate = ($excludeTemplateFiles ? str_replace ('%title', $this->newPageTemplateDefaultTitle, $this->newPageTemplate) : false);
+		$excludeFileTemplate = ($excludeTemplateFiles ? $this->newPageTemplate : false);
 		$excludeContentsRegexp = ($excludeTemplateFiles ? '^' . $this->templateMark : false);
 		
 		# Get the file listing, excluding files the size of the template (in theory this may catch others, but in practice this is good enough - adding an md5() check would require opening all files and would reduce performance
@@ -3809,10 +4137,11 @@ class pureContentEditor
 	
 	# Wrapper function to get the title of a page
 	#!# Needs to have page/file/directory type checking and cover these types also
-	function getTitle ($file)
+	private function getTitle ($file)
 	{
 		# Determine if this is a title file
-		$isTitleFile = (ereg ('^' . $this->pureContentTitleFile, basename ($file)));
+		$delimiter = '@';
+		$isTitleFile = (preg_match ($delimiter . '^' . addcslashes ($this->pureContentTitleFile, $delimiter) . $delimiter, basename ($file)));
 		
 		# Load the contents of a title file
 		if ($isTitleFile) {
@@ -3833,7 +4162,7 @@ class pureContentEditor
 	
 	
 	# Function to filter and organise the file listing
-	function submissionsFiltered ($files, $extensions = array ('html', 'txt', 'css', 'js'))
+	private function submissionsFiltered ($files, $extensions = array ('html', 'txt', 'css', 'js'))
 	{
 		# Loop through each file and build up a list of validated files
 		$validatedFiles = array ();
@@ -3874,18 +4203,27 @@ class pureContentEditor
 	
 	
 	# Function to clean up the directory structure by removing empty directories
-	function cleanUp ()
+	private function cleanUp ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Delete empty directories across the tree
 		if ($problemsFound = directories::deleteEmptyDirectories ($this->filestoreRoot)) {
-			$this->reportErrors ('Problems were encountered when attempting to delete empty folders in the filestore.', "The list of directories which did not delete is:\n" . implode ("\n", $problemsFound));
+			$html .= $this->reportErrors ('Problems were encountered when attempting to delete empty folders in the filestore.', "The list of directories which did not delete is:\n" . implode ("\n", $problemsFound));
 		}
+		
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to enable editing of the house style pages
-	function houseStyle ()
+	private function houseStyle ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Determine the allowable types
 		$supportedFileTypes = array ('html', 'php', 'js', 'css');
 		
@@ -3894,7 +4232,8 @@ class pureContentEditor
 		
 		# End if there are no files
 		if (!$files) {
-			echo "\n<p>There are no technical files available for editing under this system.</p>";
+			$html .= "\n<p>There are no technical files available for editing under this system.</p>";
+			return $html;
 		}
 		
 		# Allocate names used by pureContent
@@ -3920,19 +4259,22 @@ class pureContentEditor
 		}
 		
 		# Assemble the HTML
-		$html  = "\n<p>This section lets you edit the central, house style / technical files which are central to the running of the site.</p>";
+		$html .= "\n<p>This section lets you edit the central, house style / technical files which are central to the running of the site.</p>";
 		$html .= "\n<p class=\"warning\"><strong>Warning: You should only edit these files if you know what you are doing. Mistakes will affect the whole site.</strong></p>";
 		$html .= "\n<p>Note that some files may not be editable depending on the configuration of the webserver.</p>";
 		$html .= application::htmlUl ($links);
 		
-		# Show the HTML
-		echo $html;
+		# Return the HTML
+		return $html;
 	}
 	
 	
 	# Function to provide a message form
-	function message ()
+	private function message ()
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Get the administrators
 		$users = array ();
 		foreach ($this->users as $user => $attributes) {
@@ -3949,8 +4291,8 @@ class pureContentEditor
 		
 		# Finish if there are no users to send messages to
 		if (!$users) {
-			echo "\n<p class=\"information\">There are no users to whom messages can be sent.</p>";
-			return;
+			$html .= "\n<p class=\"information\">There are no users to whom messages can be sent.</p>";
+			return $html;
 		}
 		
 		# Create the form itself
@@ -3974,70 +4316,15 @@ class pureContentEditor
 			'cols'				=> 40,
 		));
 		
-		# Set the processing options
-		if (!$result = $form->process ()) {return false;}
-		
 		# Send the message
-		$this->sendMail ($result['username'], $result['message'], $subjectSuffix = 'message', true, $includeUrl = true);
+		if ($result = $form->process ($html)) {
+			$html .= $this->sendMail ($result['username'], $result['message'], $subjectSuffix = 'message', $includeUrl = true);
+		}
+		
+		# Return the HTML
+		return $html;
 	}
 }
 
-#!# Add more info for all reportError calls so that they location info is always included to enable debugging
-#!# When doing include (), do a check first for the type of file; if a text file, just do a file_get_contents surround with <pre />
-#!# Prevent creation of a permission when a more wide-ranging one exists
-#!# Delete all permissions when promoting to an administrator
-#!# Option not to mail yourself when you approve your own page and you are the only administrator
-#!# Audit the use of relative links
-#!# Enable user to be able to save pages directly without approval
-#!# Checking writability needs to be done on the proposed file, NOT at top level
-#!# Prevent overlapping permissions, e.g. /foo/ being created when /foo/* exists or /* exists, rather than using the ksort in permissions()
-
-
-### Potential future development suggestions:
-#R# Consider moving chdir into showMaterial ();
-#R# Fix known but difficult bug in review (): 'reject' where the actions list links all break because there is no longer a page there
-#R# Implement a better algorithm for typeOfFile ()
-#R# Implement the notion of a currently active permission which is definitive and which can be looked up against
-#!# After renaming on making live, the menu locations need to be changed; note this is going to involve extensive refactoring to involve a single 'echo $html' in the constructor
-# Groups facility
-# <table class="lines"> - has to wait for FCKeditor to support this: see http://dev.fckeditor.net/ticket/825
-# Specialised gui for menu and title files (rather than using 'list pages' or entering the URL directly)
-# Automatic deletion of permissions when folders don't exist, if a setting is turned on for this (NB needs to distinguish between not present and no permission - may not be possible)
-# More extensive menu editing system for the switch in edit ()
-# Provide a validation system (perhaps using Tidy if it is not already)? - See: http://thraxil.org/users/anders/posts/2005/09/20/Validation-meet-Unit-Testing-Unit-Testing-meet-Validation/
-# Add a link checking mechanism
-# Extension to deal with deleting/moving files or even whole folders? - would create major difficulties with integration with redirects etc, however
-# Tighten up matching of ' src=' (currently will match that string outside an img tag)
-# Allow browsing of empty folders - should suggest creating a file
-# Move as many changes as possible made within /_fckeditor into the PHP constructor (as passed through ultimateForm.php)
-# Add use of application::getTitleFromFileContents in convertPermission () to get the contents for files
-# Find some way to enable browsing of /foo/bar/[no index.html] where that is a new directory that does not exist on the live site - maybe a mod_rewrite change
-# More control over naming - moving regexp into the settings but disallow _ at the start
-# Ability to add a permission directly when adding a user rather than using two stages (and hence two e-mails)
-# BUG: _fckeditor being appended to images/links in some cases
-# Moderation should cc: other administrators (not yourself though) when a page is approved
-# Make /page.html rights the default when on a section page rather than an index page
-# Enable explicit creation of .title.txt files
-# Sort by ... for reviewing
-# Diffing function - apparently wikimedia includes a good PHP class for this - see http://cvs.sourceforge.net/viewcvs.py/wikipedia/phase3/includes/  - difference engine
-# Cookie, /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
-# Direct update rights
-# Link checker
-# Option to ban top-level _directory_ creation as well as files
-# Force .menu.html links to be absolute
-# 'Mail all users' function (complete with "are you sure you want to?" confirmation)
-# [New] symbol to mark when a page is new rather than updated
-# Lookup-enabling interface for auto permissions
-# Have a single 'master' port so that links are correct when running off two ports at once (or sort out /login ...)
-# Messaging facility should state which page the message is being sent on
-# Change all file writes so that writability check is done in setup, removing the need for error reporting
-#  sometimes not being escaped properly
-# /sitetech/ area editing GUI (for admins)
-# Start/end date should be in user not permission side
-# Consider making administrator rights set as a select box rather than a difficultly-titled checkbox
-# Need to disable the stub file being launched directly, using a check like ($_SERVER['DOCUMENT_ROOT'] . $_SERVER['REQUEST_URI'] == $_SERVER['SCRIPT_FILENAME']) but which takes into account query strings and port switching
-# Find some way round the quirk that an area being limited by IP+Raven says that a username isn't being supplied, unless the user has FIRST logged in elsewhere on the same domain and 'AAForceInteract On' has been added to apache
-# Find a less destructive way of setting the stylesheet layout for the actions box
-# Set a way of allowing editor/filemanager/connectors/php/config.php  to change $Config['Enabled'] depending on the value of $_SERVER['REMOTE_USER']
 
 ?>
