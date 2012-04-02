@@ -152,10 +152,10 @@ class pureContentEditor
 	);
 	
 	# Specify the minimum version of PHP required
-	private $minimumPhpVersion = '4.3.0';	// file_get_contents; tidy needs PHP5 also
+	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.7.0';
+	private $version = '1.7.1';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -204,6 +204,13 @@ class pureContentEditor
 		# Get the current page and attributes from the query string
 		if (!list ($this->page, $this->action, $this->attribute) = $this->parseQueryString ()) {
 			$html .= application::showUserErrors ('The URL is invalid.');
+			return $html;
+		}
+		
+		# Redirect if required
+		if ($this->action == 'returnto' && preg_match ('@^/@', $this->attribute)) {
+			$redirectTo = $this->editSiteUrl . $this->attribute;
+			application::sendHeader (302, $redirectTo);
 			return $html;
 		}
 		
@@ -326,7 +333,7 @@ class pureContentEditor
 		# Check that all required arguments have been supplied, import supplied arguments and assign defaults
 		foreach ($this->parameterDefaults as $parameter => $defaultValue) {
 			if ((is_null ($defaultValue)) && (!isSet ($parameters[$parameter]))) {
-				$setupErrors[] = "No '$parameter' has been supplied in the settings. This must be fixed by the administrator before this facility will work.";
+				$setupErrors[] = "No '{$parameter}' has been supplied in the settings. This must be fixed by the administrator before this facility will work.";
 			}
 			$this->{$parameter} = (isSet ($parameters[$parameter]) ? $parameters[$parameter] : $defaultValue);
 		}
@@ -351,7 +358,19 @@ class pureContentEditor
 		if (($_SERVER['_SERVER_PROTOCOL_TYPE'] != $this->editHostScheme) || ($this->editHostName != $httpHost) || ($_SERVER['SERVER_PORT'] != $this->editHostPort)) {$setupErrors[] = 'The editing facility must be run from the URL specified in the settings.';}
 		
 		# Check that the server is defining a remote user
-		if (!$this->user) {$setupErrors[] = 'The server did not supply a username, so the editing facility is unavailable.';}
+		if (!$this->user) {
+			
+			# Attempt to get a login from the front page of the site - sometimes the requested area may simply be set to "Allow from XXX" on the public side, which takes priority
+			if (($_SERVER['REQUEST_URI'] != '/') && (!preg_match ('@^/\?returnto=@', $_SERVER['REQUEST_URI']))) {
+				$redirectTo = "{$this->editSiteUrl}/?returnto=" . urlencode ($_SERVER['REQUEST_URI']);
+				application::sendHeader (302, $redirectTo);
+				$setupErrors[] = 'Attempting to redirect to a <a href="' . htmlspecialchars ($redirectTo) . '">login page</a> in case the current location does not support a login context';
+				return $setupErrors;
+			}
+			
+			# Otherwise, register an error
+			$setupErrors[] = 'The server did not supply a username, so the editing facility is unavailable.';
+		}
 		
 		# Ensure the filestoreRoot and liveSiteRoot are not slash-terminated
 		$this->filestoreRoot = ((substr ($this->filestoreRoot, -1) == '/') ? substr ($this->filestoreRoot, 0, -1) : $this->filestoreRoot);
@@ -504,7 +523,7 @@ class pureContentEditor
 		# Start from the assumption that the page is present
 		$pagePresent = true;
 		
-		# If the server has thrown a 404 and there is no staging page replicate this
+		# If the server has thrown a 404 and there is no staging page, replicate the 404
 		$this->pageIs404 = false;
 		if (isSet ($_SERVER['REDIRECT_STATUS'])) {
 			if ($_SERVER['REDIRECT_STATUS'] == '404') {
@@ -536,17 +555,23 @@ class pureContentEditor
 				}
 			}
 			
-			# If there is no directory index, force creation
-			if (!$this->directoryContainsIndex) {
+			# Determine if the action requires an index page to be present
+			$pageContentChangeActions = array ('edit', 'section', 'newPage', );
+			$isPageContentChangeAction = (in_array ($this->action, $pageContentChangeActions));
+			
+			# If using a page content action, but there isn't an index, force creation
+			if ($isPageContentChangeAction && !$this->directoryContainsIndex) {
 				$this->action = 'newPage';
 				return $errorsHtml;
 			}
 			
-			# Otherwise return false, which will trigger a 404
-			application::sendHeader (404);
-			$errorsHtml .= "\n" . '<h1>Page not found</h1>';
-			$errorsHtml .= "\n" . '<p class="failure">The page you requested cannot be found.</p>';
-			return $errorsHtml;
+			# If dealing with a page content action, or just browsing
+			if ($isPageContentChangeAction || $this->action == 'browse') {
+				application::sendHeader (404);
+				$errorsHtml .= "\n" . '<h1>Page not found</h1>';
+				$errorsHtml .= "\n" . '<p class="failure">The page you requested cannot be found. Do you want to <a href="' . $this->nearestPage ($this->page) . '?newPage=' . htmlspecialchars (urlencode (basename ($this->page))) . '">create a new page here</a>?</p>';
+				return $errorsHtml;
+			}
 		}
 		
 		# Otherwise return no errors
@@ -2010,7 +2035,7 @@ class pureContentEditor
 			<li><strong>Avoid abbreviations</strong>: make it guessable and self-explanatory</li>
 			<!--<li>{$this->maximumFileAndFolderNameLength} characters maximum</li>-->
 			<li>If necessary, run two words together</li>
-			<li>Consider permanence (e.g. 'contacts' for a telephone number page that will have addresses later)</li>
+			<li>Consider permanence (e.g. 'contacts' for a telephone number section - it could have addresses later)</li>
 			<li>Folders form a hierarchical structure</li>
 		</ul>
 		";
@@ -2318,17 +2343,17 @@ class pureContentEditor
 				<li><strong>Avoid abbreviations</strong>: make it guessable and self-explanatory</li>
 				<!--<li>{$this->maximumFileAndFolderNameLength} characters maximum</li>-->
 				<li>If necessary, run two words together</li>
-				<li>Consider permanence (e.g. 'contacts' for a telephone number page that will have addresses later)</li>
+				<li>Consider permanence (e.g. 'contacts' for a telephone number page - it could have addresses later)</li>
 			</ul>
 			";
 			$form->heading (3, 'Choose a short one-word file name, followed by .html');
 			$form->input (array (
 				'name'			=> 'newpage',
-				'title'					=> 'New page address',
+				'title'			=> 'New page address',
 				'description'	=> ($nameIsEditable ? $description : false),
 				'required'				=> true,
 				'regexp'				=> $regexp,
-				'default'  => $newPageName = ($nameIsEditable ? '' : $this->directoryIndex),
+				'default'  => $newPageName = ($nameIsEditable ? $this->attribute : $this->directoryIndex),
 				'editable' => $nameIsEditable,
 				'disallow' => ($currentPages ? array ($currentPagesRegexp => "Sorry, <a href=\"{$pageSubmitted}\">a page of that name</a> already exists, as shown in the list below. Please try another.") : false),
 				'placeholder'	=> 'pagetitle.html',
@@ -3433,7 +3458,7 @@ class pureContentEditor
 	
 	
 	# Function to convert a timestamp to a string usable by strtotime
-	private function convertTimestamp ($timestamp, $includeTime = true)
+	private function convertTimestamp ($timestamp, $includeTime = true, $asUnixtime = false)
 	{
 		# Convert the timestamp
 		$timestamp = preg_replace ('/-(\d{2})(\d{2})(\d{2})$/D', ' $1:$2:$3', $timestamp);
@@ -3441,8 +3466,14 @@ class pureContentEditor
 		# Determine the output string to use
 		$format = 'l jS M Y' . ($includeTime ? ', g.ia' : '');	// Previously: ($includeTime ? 'g.ia \o\n ' : '') . 'jS M Y';
 		
+		# Convert to Unixtime
+		$unixtime = strtotime ($timestamp);
+		
+		# Return as Unixtime if required
+		if ($asUnixtime) {return $unixtime;}
+		
 		# Convert the timestamp
-		$string = date ($format, strtotime ($timestamp));
+		$string = date ($format, $unixtime);
 		
 		# Return the string
 		return $string;
@@ -3598,7 +3629,6 @@ class pureContentEditor
 		# Show the list if required
 		$showList = (!$filename || ($filename && (!isSet ($this->submissions[$filename]))));
 		if ($showList) {
-			#!# Perhaps have a mode which forces clearance of template files that have been left behind
 			$html .= $this->listSubmissions ($reload = true);
 			return $html;
 		}
@@ -3896,7 +3926,7 @@ class pureContentEditor
 	
 	
 	# Wrapper function to send the administrator an e-mail listing errors
-	private function reportErrors ($errors, $privateInfo = false)
+	private function reportErrors ($errors, $privateInfo = false, $silently = false)
 	{
 		# Start the HTML
 		$html = '';
@@ -3904,9 +3934,11 @@ class pureContentEditor
 		# Ensure the errors are an array
 		$errors = application::ensureArray ($errors);
 		
-		# Show the errors
-		foreach ($errors as $error) {
-			$html .= "\n<p class=\"failure\">{$error}</p>";
+		# Show the errors if required
+		if (!$silently) {
+			foreach ($errors as $error) {
+				$html .= "\n<p class=\"failure\">{$error}</p>";
+			}
 		}
 		
 		# Do not attempt to mail the administrator if no administrator address is available (which could be why an error is being thrown)
@@ -3927,6 +3959,10 @@ class pureContentEditor
 		if ($messageSentOk) {
 			$html .= '<p class="information">The server administrator has been informed about ' . (count ($errors) == 1 ? 'this error' : 'these errors') . '.</p>';
 		}
+		
+		# Clear the HTML if sending silently
+		if ($silently) {$html = '';}
+		
 		
 		# Return the HTML
 		return $html;
@@ -4119,7 +4155,7 @@ class pureContentEditor
 		$excludeFileTemplate = ($excludeTemplateFiles ? $this->newPageTemplate : false);
 		$excludeContentsRegexp = ($excludeTemplateFiles ? '^' . $this->templateMark : false);
 		
-		# Get the file listing, excluding files the size of the template (in theory this may catch others, but in practice this is good enough - adding an md5() check would require opening all files and would reduce performance
+		# Get the file listing, excluding files matching the template
 		$files = directories::flattenedFileListing ($this->filestoreRoot, array (), $includeRoot = false, $excludeFileTemplate, $excludeContentsRegexp);
 		
 		# Filter and organise the file listing
@@ -4193,6 +4229,10 @@ class pureContentEditor
 			# Get the intended filename by resplicing the name back together
 			$attributes['filename'] = implode ('.', $fileinfo) . '.' . $attributes['extension'];
 			
+			# Add in the file size
+			$fullPath = $this->filestoreRoot . $file;
+			$attributes['size'] = filesize ($fullPath);
+			
 			# Assign the information to the list of validated files
 			$validatedFiles[$file] = $attributes;
 		}
@@ -4210,11 +4250,77 @@ class pureContentEditor
 		
 		# Delete empty directories across the tree
 		if ($problemsFound = directories::deleteEmptyDirectories ($this->filestoreRoot)) {
-			$html .= $this->reportErrors ('Problems were encountered when attempting to delete empty folders in the filestore.', "The list of directories which did not delete is:\n" . implode ("\n", $problemsFound));
+			$html .= $this->reportErrors ('Problems were encountered when attempting to delete empty folders in the filestore.', "The list of directories which did not delete is:\n" . implode ("\n", $problemsFound), true);
+		}
+		
+		# Remove old template files
+		if ($problemsFound = $this->removeTemplateFiles ()) {
+			$html .= $this->reportErrors ('Problems were encountered when attempting to remove old template files in the filestore.', "The list of files which did not delete is:\n" . implode ("\n", $problemsFound), true);
 		}
 		
 		# Return the HTML
 		return $html;
+	}
+	
+	
+	# Function to remove old template files
+	#!# This infrastructure should be removed entirely when the template can be created in memory instead of physically - currently users cannot be deleted for 10 hours after creating an orphaned template file
+	private function removeTemplateFiles ($forceUsername = false)
+	{
+		# Assume no problems to start with
+		$problemsFound = false;
+		
+		# End if no submissions
+		if (!$this->submissions) {return $problemsFound;}
+		
+		# Determine the filesize of the template
+		$templateSize = strlen ($this->templateMark . str_replace ('%title', $this->newPageTemplateDefaultTitle, $this->newPageTemplate));
+		
+		# Find all the files whose size matches the size of the template
+		$templateFiles = array ();
+		foreach ($this->submissions as $file => $attributes) {
+			if ($attributes['size'] != $templateSize) {continue;}	// Skip for performance
+			$contents = file_get_contents ($this->filestoreRoot . $file);
+			$delimiter = '@';
+			if (preg_match ($delimiter . '^' . addcslashes ($this->templateMark, $delimiter) . $delimiter, $contents)) {
+				$templateFiles[$file] = $attributes;
+			}
+		}
+		
+		# Set to clear after a certain time
+		$hours = 10;
+		$clearanceTime = 60 * 60 * $hours;
+		
+		# Loop through and determine which template files should be removed
+		$clearFiles = array ();
+		$now = time ();
+		foreach ($templateFiles as $file => $attributes) {
+			
+			# Clear those whose username matches if being forced
+			if ($forceUsername) {
+				if ($attributes['username'] == $forceUsername) {
+					$clearFiles[$file] = $attributes;
+					continue;
+				}
+			}
+			
+			# Clear those after a certain time
+			$unixtime = $this->convertTimestamp ($attributes['timestamp'], true, $asUnixtime = true);
+			if ($unixtime < ($now - $clearanceTime)) {
+				$clearFiles[$file] = $attributes;
+			}
+		}
+		
+		# Delete the files
+		foreach ($clearFiles as $file => $attributes) {
+			$fileToDelete = $this->filestoreRoot . $file;
+			if (!unlink ($fileToDelete)) {
+				$problemsFound[] = $file;
+			}
+		}
+		
+		# Return lack of problems
+		return $problemsFound;
 	}
 	
 	
