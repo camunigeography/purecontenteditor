@@ -68,7 +68,6 @@
 # Have a single 'master' port so that links are correct when running off two ports at once (or sort out /login ...)
 # Change all file writes so that writability check is done in setup, removing the need for error reporting
 #  sometimes not being escaped properly
-# /sitetech/ area editing GUI (for admins)
 # Start/end date should be in user not permission side
 # Consider making administrator rights set as a select box rather than a difficultly-titled checkbox
 # Need to disable the stub file being launched directly, using a check like ($_SERVER['DOCUMENT_ROOT'] . $_SERVER['REQUEST_URI'] == $_SERVER['SCRIPT_FILENAME']) but which takes into account query strings and port switching
@@ -103,14 +102,19 @@ class pureContentEditor
 		'richtextEditorEditorAreaCSS' => '/sitetech/global.css',	# CSS file to use in the editor area
 		'richtextEditorBasePath' => '/_fckeditor/',	// Location of the DHTML editing component files
 		'richtextEditorToolbarSet' => 'pureContent',	// Richtext editor Toolbar set (must exist in fckconfig-customised.js)
+		'richtextEditorToolbarSetBasic' => 'BasicLonger',	// Richtext editor Toolbar set (must exist in fckconfig-customised.js)
 		'CKFinder' => false,	// Whether to use the CKFinder plugin
 		'directoryIndex' => 'index.html',		// Default directory index name
 		'virtualPages'	=> false,		// Regexp location(s) where a page is claimed already to exist but there is no physical file
 		'newPageTemplate' => "\n<h1>%title</h1>\n<p>Content starts here</p>",	// Default directory index file contents
 		'newPageTemplateDefaultTitle' => "Title goes here",	// What %title normally becomes
+		'newSubmenuTemplate' => "\n<ul>\n\t<li>Bullet-point list</li>\n\t<li>of menu items</li>\n</ul>",	// Default submenu file contents
+		'newSidebarTemplate' => "\n<h2>Sidebar title goes here</h2>\n<p>Content starts here</p>",	// Default sidebar file contents
 		'messageSignatureGreeting' => 'Best wishes,',	// Preset text for the e-mail signature to users
 		'pureContentTitleFile' => '.title.txt',	// pureContent title file name
-		'pureContentMenuFile' => '.menu.html',	// pureContent menu file name
+		'pureContentSubmenuFile' => '.menu.html',	// pureContent submenu file name
+		'pureContentSidebarFile' => 'sidebar.html',	// pureContent sidebar file name
+		'pureContentMenuFile' => '/sitetech/menu.html',	// pureContent menu file name
 		'reviewPagesOpenNewWindow' => false,	// Whether pages for review should open in a new window or not
 		'maximumFileAndFolderNameLength' => 25,	// Maximum number of characters for new files and folders
 		'contentNegotiation' => false,			// Whether to switch on content-negotiation semantics when dealing with filenames
@@ -153,7 +157,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.0';
+	private $version = '1.8.1';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -219,7 +223,7 @@ class pureContentEditor
 		}
 		
 		# Get the current directory for this page
-		$this->currentDirectory = $this->currentDirectory ();
+		$this->currentDirectory = $this->directoryOfPage ($this->page);
 		
 		# Get the administrators
 		if (!$this->administrators = $this->administrators ($errorsHtml)) {
@@ -277,16 +281,10 @@ class pureContentEditor
 		$this->pageContainsPhp = $this->pageContainsPhp ();
 		
 		# Determine whether to use blog mode
-		$this->isBlogMode = $this->isBlogMode ();
+		list ($this->blogMode, $this->isBlogTreeRoot) = $this->blogMode ($this->currentDirectory);
 		
 		# Add to the list of banned locations the technical file locations, if the user is not an administrator
 		if (!$this->userIsAdministrator && $this->technicalFileLocations) {$this->bannedLocations = array_merge ($this->bannedLocations, $this->technicalFileLocations);}
-		
-		# Determine whether there is an administrator ban here
-		$this->changesBannedHere = $this->changesBannedHere ();
-		
-		# Determine whether the user has rights here
-		list ($this->userHasPageEditingRightsHere, $this->userHasPageCreationRightsHere, $this->userHasFolderCreationRightsHere) = $this->rights ();
 		
 		# Determine whether the user can edit the current page
 		$this->userCanEditCurrentPage = $this->userCanEditCurrentPage ();
@@ -635,26 +633,20 @@ class pureContentEditor
 	}
 	
 	
-	# Function to determine whether the editor should run in blog mode
-	private function isBlogMode ($location = false)
+	# Function to determine whether the editor should run in blog mode, returning the root of the blog if so, and whether the supplied location is the blog tree root
+	private function blogMode ($location)
 	{
 		# Create a blog mode reminder
 		$this->blogModeReminder = "\n<p class=\"warning\"><strong>Reminder</strong>: Blog entries should <strong>not</strong> be a replacement for material properly organised within the main site hierarchy.<br />Make sure material that should be within the main site is put there <strong>before</strong> creating the blog posting.</p>";
 		
 		# Assume that we are not in any blog tree root directory
-		$this->isBlogTreeRoot = false;
-		
-		# Determine the root of the blog tree
-		$this->blogTreeRoot = false;
+		$isBlogTreeRoot = false;
 		
 		# Return false if no blog
 		if (!$this->blogs) {return false;}
 		
 		# Ensure there is a list of blogs, even if only one
 		$blogs = application::ensureArray ($this->blogs);
-		
-		# Determine the location to check
-		$location = ($location ? $location : $this->currentDirectory);
 		
 		# Loop through to check for a match
 		foreach ($blogs as $blog) {
@@ -665,22 +657,20 @@ class pureContentEditor
 				
 				# If the current directory exactly matches the root, assign it as the blog tree root
 				if ($location == $blog) {
-					$this->isBlogTreeRoot = true;
-					$this->blogTreeRoot = $blog;
-					return true;
+					$isBlogTreeRoot = true;
+					return array ($blog, $isBlogTreeRoot);
 				}
 			}
 			
-			# Return true if the URL matches normally
+			# Return true if the URL matches normally (e.g. the current URL is /blogs/path/to/some/posting/ which will match the blog root /blog/)
 			$delimiter = '@';
-			if (preg_match ($delimiter . '^' . addcslashes ($blog, $delimiter) . $delimiter, $this->currentDirectory)) {
-				$this->blogTreeRoot = $blog;
-				return true;
+			if (preg_match ($delimiter . '^' . addcslashes ($blog, $delimiter) . $delimiter, $location)) {
+				return array ($blog, $isBlogTreeRoot);
 			}
 		}
 		
 		# Return false if not found
-		return false;
+		return array (false, $isBlogTreeRoot);
 	}
 	
 	
@@ -771,14 +761,6 @@ class pureContentEditor
 				$split = explode ('=', $query[1]);
 				$action = $split[0];
 				$attribute = (isSet ($split[1]) ? $split[1] : '');
-				
-/*	breadcrumb editing work - TODO
-				# If the breadcrumb type is requested, substitute the directory index component with the breadcrumb component
-				if ($action == 'breadcrumb') {
-					$delimiter = '@';
-					$page = preg_replace ($delimiter . addcslashes (basename ($page), $delimiter) . '$' . $delimiter, $this->pureContentTitleFile, $page);
-				}
-*/
 			}
 		}
 		
@@ -787,20 +769,20 @@ class pureContentEditor
 	}
 	
 	
-	# Function to get the current directory for this page
-	private function currentDirectory ()
+	# Function to get the directory for a supplied page
+	private function directoryOfPage ($page)
 	{
-		# Get the current page
-		$currentPage = str_replace ('\\', '/', $this->page);
+		# Normalise the page
+		$page = str_replace ('\\', '/', $page);
 		
-		# Get the current directory
-		$currentDirectory = (substr ($currentPage, -1) == '/' ? $currentPage : str_replace ('\\', '/', dirname ($currentPage)));
+		# Get the directory
+		$directory = (substr ($page, -1) == '/' ? $page : str_replace ('\\', '/', dirname ($page)));
 		
 		# Slash-terminate if necessary
-		if (substr ($currentDirectory, -1) != '/') {$currentDirectory .= '/';}
+		if (substr ($directory, -1) != '/') {$directory .= '/';}
 		
 		# Return the result
-		return $currentDirectory;
+		return $directory;
 	}
 	
 	
@@ -941,45 +923,71 @@ class pureContentEditor
 	}
 	
 	
-	# Function to determine whether the page is banned
-	private function changesBannedHere ()
+	# Function to determine whether the user has editing rights
+	private function userHasPageEditingRights ($page)
 	{
-		# Return the result directly
-		return $this->matchLocation ($this->bannedLocations, $this->page);
+		# Obtain the user's rights
+		$rights = $this->determineRights ($page);
+		
+		# Determine this type of right
+		$userHasPageEditingRights = ($rights);
+		
+		# Return the result
+		return $userHasPageEditingRights;
 	}
 	
 	
-	# Function to determine whether the user has page creation rights here
-	private function rights ()
+	# Function to determine if the user has page creation rights
+	private function userHasPageCreationRights ($page)
 	{
-		# Determine the user's rights
-		$rights = $this->determineRights ();
+		# Obtain the user's rights
+		$rights = $this->determineRights ($page);
+		
+		# Determine the directory for this page
+		$directory = $this->directoryOfPage ($page);
 		
 		# Determine whether page creation is being disallowed at this location due to root level disallowing
-		$rootPageCreationRestrictionApplies = ($this->currentDirectory == '/' && !$this->allowPageCreationAtRootLevel);
+		$rootPageCreationRestrictionApplies = ($directory == '/' && !$this->allowPageCreationAtRootLevel);
 		
-		# Determine the user's editing, page creation and folder creation rights
-		$editing = ($rights);
-		$pageCreation = (($rights == 'tree' || $rights == 'directory') && !$rootPageCreationRestrictionApplies && !$this->isBlogTreeRoot);
-		$folderCreation = (($rights == 'tree') && ((!$this->isBlogMode) || ($this->isBlogMode && $this->isBlogTreeRoot)));
-/*	breadcrumb editing work - TODO
-		$pageCreation = (($rights === true || $rights === 'tree' || $rights === 'directory') && !$rootPageCreationRestrictionApplies);
-		$folderCreation = ($rights === true || $rights === 'tree');
-*/
+		# Look up blog mode for this area
+		list ($blogMode, $isBlogTreeRoot) = $this->blogMode ($directory);
 		
-		# Return the values
-		return array ($editing, $pageCreation, $folderCreation);
+		# Determine this type of right
+		$userHasPageCreationRights = (($rights == 'tree' || $rights == 'directory') && !$rootPageCreationRestrictionApplies && !$isBlogTreeRoot);
+		
+		# Return the result
+		return $userHasPageCreationRights;
+	}
+	
+	
+	# Function to determine if the user has folder creation rights
+	private function userHasFolderCreationRights ($page)
+	{
+		# Obtain the user's rights
+		$rights = $this->determineRights ($page);
+		
+		# Determine the directory for this page
+		$directory = $this->directoryOfPage ($page);
+		
+		# Look up blog mode for this area
+		list ($blogMode, $isBlogTreeRoot) = $this->blogMode ($directory);
+		
+		# Determine this type of right
+		$userHasFolderCreationRights = (($rights == 'tree') && ((!$blogMode) || ($blogMode && $isBlogTreeRoot)));
+		
+		# Return the result
+		return $userHasFolderCreationRights;
 	}
 	
 	
 	# Function to determine the user's rights overall
-	private function determineRights ()
+	private function determineRights ($page)
 	{
 		# Determine if the user can make files live directory (further changes below)
 		$this->userCanMakeFilesLiveDirectly = ($this->userIsAdministrator ? true : false);
 		
 		# Return false if the page is banned
-		if ($this->changesBannedHere) {return false;}
+		if ($this->changesBannedHere ($page)) {return false;}
 		
 		# Return true if the user is an administrator
 		if ($this->userIsAdministrator) {return true;}
@@ -991,7 +999,7 @@ class pureContentEditor
 		}
 		
 		# Get the user's rights in detail
-		$rights = $this->matchLocation ($locations, $this->page, $determineLocationInUse = true);
+		$rights = $this->matchLocation ($locations, $page, $determineLocationInUse = true);
 		
 		# Determine the exact permission in use
 		$permission = ($this->locationInUse ? "{$this->user}:{$this->locationInUse}" : false);
@@ -1002,10 +1010,18 @@ class pureContentEditor
 	}
 	
 	
-	# Function to perform a location match; returns either a string (equating to true) or false
-	private function matchLocation ($locations, $test, $determineLocationInUse = false)
+	# Function to determine whether the supplied page location is banned
+	private function changesBannedHere ($location)
 	{
-		# If necessary, set the default for the location in use
+		# Return the result directly
+		return $this->matchLocation ($this->bannedLocations, $location);
+	}
+	
+	
+	# Function to perform a location match; returns either a string (equating to true) or false
+	private function matchLocation ($locations, $locationToTest, $determineLocationInUse = false)
+	{
+		# Set the default for the location in use
 		if ($determineLocationInUse) {$this->locationInUse = false;}
 		
 		# End if no locations
@@ -1019,14 +1035,14 @@ class pureContentEditor
 		foreach ($locations as $location) {
 			
 			# Check for an exact match
-			if ($location == $test) {
+			if ($location == $locationToTest) {
 				if ($determineLocationInUse) {$this->locationInUse = $location;}
 				return 'page';	// i.e. true
 			}
 			
 			# Check for pages in the same directory
 			if (substr ($location, -1) == '/') {
-				$page = preg_replace ($delimiter . '^' . addcslashes ($location, $delimiter) . $delimiter, '', $test);
+				$page = preg_replace ($delimiter . '^' . addcslashes ($location, $delimiter) . $delimiter, '', $locationToTest);
 				if (strpos ($page, '/') === false) {
 					if ($determineLocationInUse) {$this->locationInUse = $location;}
 					return 'directory';	// i.e. true
@@ -1035,8 +1051,8 @@ class pureContentEditor
 			
 			# Check for pages below the test location
 			if (substr ($location, -1) == '*') {
-				if (preg_match ($delimiter . '^' . addcslashes ($location, $delimiter) . $delimiter, $test)) {
-					if ($location != preg_replace ($delimiter . '^' . addcslashes ($location, $delimiter) . $delimiter, '', $test)) {
+				if (preg_match ($delimiter . '^' . addcslashes ($location, $delimiter) . $delimiter, $locationToTest)) {
+					if ($location != preg_replace ($delimiter . '^' . addcslashes ($location, $delimiter) . $delimiter, '', $locationToTest)) {
 						if ($determineLocationInUse) {$this->locationInUse = $location;}
 						return 'tree';	// i.e. true
 					}
@@ -1044,7 +1060,7 @@ class pureContentEditor
 			}
 			
 			# Check for exact regexp matches, which would be a on a per-page basis as the others have not caught it
-			if (preg_match ($delimiter . addcslashes ($location, $delimiter) . $delimiter, $test)) {
+			if (preg_match ($delimiter . addcslashes ($location, $delimiter) . $delimiter, $locationToTest)) {
 				return 'page';	// i.e. true
 			}
 		}
@@ -1064,7 +1080,7 @@ class pureContentEditor
 		if ($this->pageIsBeingAliased) {return false;}
 		
 		# Otherwise return whether the user has rights here
-		return $this->userHasPageEditingRightsHere;
+		return $this->userHasPageEditingRights ($this->page);
 	}
 	
 	
@@ -1075,7 +1091,7 @@ class pureContentEditor
 		if (!$this->enablePhpCheck) {return false;}
 		
 		# If in memory, then return false
-		if ($this->editableFileContents === false) {return false;}
+		if (!$this->editableFile) {return false;}
 		
 		# Check whether the page contains the string <?php
 		return (substr_count ($this->editableFileContents, '<?php'));
@@ -1086,7 +1102,7 @@ class pureContentEditor
 	private function typeOfFile ()
 	{
 		# Get the filename
-		$filename = basename ($this->editableFile);
+		$filename = basename ($this->page);
 		
 		# Assign a preg delimiter
 		$delimiter = '@';
@@ -1094,8 +1110,11 @@ class pureContentEditor
 		# Title file, starts with the string contained in $this->pureContentTitleFile
 		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentTitleFile, $delimiter) . $delimiter, $filename)) {return 'titleFile';}
 		
-		# Menu file, starts with the string contained in $this->pureContentMenuFile
-		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentMenuFile, $delimiter) . $delimiter, $filename)) {return 'menuFile';}
+		# Menu file, starts with the string contained in $this->pureContentSubmenuFile
+		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentSubmenuFile, $delimiter) . $delimiter, $filename)) {return 'submenuFile';}
+		
+		# Menu file, starts with the string contained in $this->pureContentSidebarFile
+		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentSidebarFile, $delimiter) . $delimiter, $filename)) {return 'sidebarFile';}
 		
 		# Text files
 		if (preg_match ($delimiter . '\.txt((\.[0-9]{8}-[0-9]{6}\..+)?)$' . $delimiter, $filename)) {return 'txtFile';}
@@ -1116,22 +1135,22 @@ class pureContentEditor
 	# Function to get menu actions and their permissions
 	private function actions ()
 	{
+		# Determine the location of certain special files
+		$directoryComponents = explode ('/', trim ($this->currentDirectory));
+		$submenuLocation = (count ($directoryComponents) >= 3 ? '/' . $directoryComponents[1] . '/' . $this->pureContentSubmenuFile : false);
+		
 		# Create an array of the actions
 		$actions = array (
 			'browse' => array (
 				'title' => 'Browse site',
 				'tooltip' => 'Browse the site as normal and find pages to edit',
-				#!# Find a way to get this removed
-				'url' => $this->page,	// Necessary to ensure index.html is at the end of the page
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
 			),
 			
 			'edit' => array (
-				'title' => (($this->isBlogMode && !$this->isBlogTreeRoot) ? 'Edit this blog posting' : '<strong>Edit this page</strong>'),
-				#!# Find a way to get this removed
-				'url' => $this->page . '?edit',	// Necessary to ensure index.html is at the end of the page
-				'tooltip' => ($this->isBlogMode ? 'Edit the current blog posting' : 'Edit the current page'),
+				'title' => (($this->blogMode && !$this->isBlogTreeRoot) ? 'Edit this blog posting' : '<strong>Edit this page</strong>'),
+				'tooltip' => ($this->blogMode ? 'Edit the current blog posting' : 'Edit the current page'),
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
 				'check' => 'userCanEditCurrentPage',
@@ -1148,41 +1167,47 @@ class pureContentEditor
 			),
 			
 			'section' => array (
-				'title' => ($this->isBlogMode ? 'Create new blog' : 'Create new section here'),
-				'tooltip' => ($this->isBlogMode ? 'Create a new blog' : 'Create a new section (set of pages)'),
+				'title' => ($this->blogMode ? 'Create new blog' : 'Create new section here'),
+				'tooltip' => ($this->blogMode ? 'Create a new blog' : 'Create a new section (set of pages)'),
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
-				'check' => 'userHasFolderCreationRightsHere',
+				'check' => $this->userHasFolderCreationRights ($this->page),
 			),
 			
 			'newPage' => array (
-				'title' => ($this->isBlogMode ? 'Create new blog posting' : 'Create new page here'),
-				'tooltip' => ($this->isBlogMode ? 'Create a new entry within this blog' : 'Create a new page within this existing section'),
+				'title' => ($this->blogMode ? 'Create new blog posting' : 'Create new page here'),
+				'tooltip' => ($this->blogMode ? 'Create a new entry within this blog' : 'Create a new page within this existing section'),
 				'administratorsOnly' => false,
 				'grouping' => 'Main actions',
-				'check' => 'userHasPageCreationRightsHere',
+				'check' => $this->userHasPageCreationRights ($this->page),
 			),
 			
-/*	breadcrumb editing work - TODO
 			'breadcrumb' => array (
 				'title' => 'Breadcrumb',
-				'tooltip' => 'Edit or create the breadcrumb trail item for this folder',
-				// 'url' => $this->pureContentTitleFile . '?edit',
+				'tooltip' => 'Edit or create the breadcrumb trail item for this main section',
+				'url' => $this->currentDirectory . $this->pureContentTitleFile . '?breadcrumb',
 				'administratorsOnly' => false,
-				'grouping' => 'Additional',
-				'check' => 'userHasPageCreationRightsHere',
+				'grouping' => 'Navigation',
+				'check' => $this->userHasPageCreationRights ($this->page),
 			),
 			
 			'submenu' => array (
 				'title' => 'Submenu',
-				'tooltip' => 'Edit or create the submenu for this main section',
-				#!# Add in the first directory at the start here
-				// 'url' => $this->pureContentMenuFile . '?edit',
+				'tooltip' => 'Edit or create the menu for this section',
+				'url' => $submenuLocation . '?submenu',
 				'administratorsOnly' => false,
-				'grouping' => 'Additional',
-				'check' => 'userHasPageCreationRightsHere',
+				'grouping' => 'Navigation',
+				'check' => ((bool) ($submenuLocation) && $this->userHasPageCreationRights ($submenuLocation)),
 			),
-*/
+			
+			'sidebar' => array (
+				'title' => 'Sidebar',
+				'tooltip' => 'Edit or create a sidebar item for pages in this section',
+				'url' => $this->currentDirectory . $this->pureContentSidebarFile . '?sidebar',
+				'administratorsOnly' => false,
+				'grouping' => 'Navigation',
+				'check' => $this->userHasPageCreationRights ($this->page),
+			),
 			
 			'myAreas' => array (
 				'title' => 'My areas',
@@ -1193,8 +1218,8 @@ class pureContentEditor
 			
 			'showCurrent' => array (
 				'title' => 'List pages here',
-				'title' => ($this->isBlogMode ? ($this->isBlogTreeRoot ? 'List blogs/pages here' : 'List blog entries') : 'Pages/sections here'),
-				'tooltip' => ($this->isBlogMode ? ($this->isBlogTreeRoot ? 'List the blogs and other ancillary pages available' : 'List the entries in the current blog') : 'List the pages in the current section (folder) of the website'),
+				'title' => ($this->blogMode ? ($this->isBlogTreeRoot ? 'List blogs/pages here' : 'List blog entries') : 'Pages/sections here'),
+				'tooltip' => ($this->blogMode ? ($this->isBlogTreeRoot ? 'List the blogs and other ancillary pages available' : 'List the entries in the current blog') : 'List the pages in the current section (folder) of the website'),
 				'administratorsOnly' => false,
 				'grouping' => 'Additional',
 			),
@@ -1314,7 +1339,11 @@ class pureContentEditor
 			
 			# If there is a special property check required (which is reversed if appended with '!'), check for that
 			if (isSet ($attributes['check'])) {
-				if (substr ($attributes['check'], 0, 1) == '!') {
+				if (is_bool ($attributes['check'])) {
+					if (!$attributes['check']) {
+						unset ($actions[$action]);
+					}
+				} else if (substr ($attributes['check'], 0, 1) == '!') {
 					$functionToCheck = substr ($attributes['check'], 1);
 					if ($this->$functionToCheck) {
 						unset ($actions[$action]);
@@ -1381,16 +1410,30 @@ class pureContentEditor
 			$menu[$grouping][] = $action;
 		}
 		
+		# Define the ancilliary files
+		$ancilliaryFiles = array (
+			$this->pureContentTitleFile,
+			$this->pureContentSubmenuFile,
+			$this->pureContentMenuFile,
+		);
+		
 		# Compile the task box HTML
 		$html  = "\n\n<div id=\"administration\" class=\"graybox\">";
 		$html .= "\n\n<p class=\"right\"><a href=\"" . ($this->logout ? $this->logout : '?logout') . '" title="Log out when you have finished working with the editing system to secure your account">[Log out]</a></p>';
 		$html .= "\n\t<p><em>pureContentEditor</em> actions available here for <strong>{$this->user}" . ($this->userIsAdministrator ? ' (ADMIN)' : '') . '</strong>:</p>';
-		$html .= "\n\t<ul>";
+		$html .= "\n\t<ul id=\"administrationtypes\">";
 		foreach ($menu as $group => $actions) {
 			$html .= "\n\t\t<li>{$group}:";
 			$html .= "\n\t\t\t<ul>";
 			foreach ($actions as $action) {
-				$href = (isSet ($this->actions[$action]['url']) ? $this->actions[$action]['url'] : $this->chopDirectoryIndex ($this->page) . "?{$action}");
+				$naturalUrl = $this->chopDirectoryIndex ($this->page);
+				if ($action != 'edit') {
+					$delimiter = '@';
+					foreach ($ancilliaryFiles as $ancilliaryFile) {
+						$naturalUrl = preg_replace ($delimiter . addcslashes ($ancilliaryFile, $delimiter) . '$' . $delimiter, '', $naturalUrl);
+					}
+				}
+				$href = (isSet ($this->actions[$action]['url']) ? $this->actions[$action]['url'] : $naturalUrl . "?{$action}");
 				$liClassSelected = (($action == $this->action) ? ' class="selected"' : '');
 				$classHtml = ($this->actions[$action]['administratorsOnly'] ? ' class="administrative"' : '');
 				$titleHtml = " title=\"{$this->actions[$action]['tooltip']}\"";
@@ -1585,17 +1628,6 @@ class pureContentEditor
 	}
 	
 	
-/*	breadcrumb editing work - TODO
-	# Function to provide breadcrumb trail editing
-	private function breadcrumb ()
-	{
-		# Run the editing function
-		$html = $this->edit ();
-		return $html;
-	}
-*/
-	
-	
 	# Function to determine whether a location is potentially writable; for instance, if a file would need to go at /path/to/foo/index.html and /path/to/ was all that existed, then the check would be for writability of /path/to/
 	private function treesPotentiallyWritable ($location, &$html)
 	{
@@ -1610,6 +1642,27 @@ class pureContentEditor
 		
 		# Return success, as all roots have a writeable path within them
 		return true;
+	}
+	
+	
+	# Function to edit/create the breadcrumb
+	private function breadcrumb ()
+	{
+		return $this->edit ();
+	}
+	
+	
+	# Function to edit/create the submenu
+	private function submenu ()
+	{
+		return $this->edit ();
+	}
+	
+	
+	# Function to edit/create the sidebar
+	private function sidebar ()
+	{
+		return $this->edit ();
 	}
 	
 	
@@ -1634,7 +1687,8 @@ class pureContentEditor
 		# If there is no directory index, state that this is required
 		$pagename = basename ($this->page);
 		$requestIsIndex = ($pagename == $this->directoryIndex);
-		$forceIndexPageCreation = (!$requestIsIndex && !$this->directoryContainsIndex ());
+		$houseStyleFiles = $this->getHouseStyleFiles ();
+		$forceIndexPageCreation = (!$requestIsIndex && !$this->directoryContainsIndex () && !array_key_exists ($this->page, $houseStyleFiles));
 		if ($forceIndexPageCreation) {
 			$html = "<p class=\"warning\">This section currently contains no front page ({$this->directoryIndex}). You need to <a href=\"{$this->currentDirectory}{$this->directoryIndex}?edit\">create an index page for this section</a> before creating other pages.</p>";
 			return $html;
@@ -1648,14 +1702,6 @@ class pureContentEditor
 			$html = "<p class=\"warning\">The pagename you requested " . htmlspecialchars ($pagename) . " is invalid. Please go to <a href=\"{$this->currentDirectory}?newPage\">create a new page</a> again.</p>";
 			return $html;
 		}
-		
-		# If the page doesn't exist, then select the template
-		if (!$this->livePage ($this->page) && !$this->stagingPage ($this->page)) {
-			$title = ($this->attribute ? htmlspecialchars ($this->attribute) : $this->newPageTemplateDefaultTitle);
-			$this->editableFileContents = str_replace ('%title', $title, $this->newPageTemplate);
-		}
-		
-		
 		
 		# Create the form itself
 		$form = new form (array (
@@ -1671,7 +1717,7 @@ class pureContentEditor
 		
 		# Add a reminder when in blog mode
 		$heading  = '';
-		if ($this->isBlogMode) {
+		if ($this->blogMode) {
 			$heading .= $this->blogModeReminder;
 		}
 		
@@ -1697,6 +1743,8 @@ class pureContentEditor
 			
 			# For a title file, show a standard input box
 			case 'titleFile':
+				
+				# Input widget
 				$form->input (array (
 					'name'			=> 'content',
 					'title'			=> 'Title for the section (title file)',
@@ -1704,13 +1752,41 @@ class pureContentEditor
 					'default'		=> $contents,
 					'required'		=> true,
 					'autofocus' 	=> true,
+					'size'			=> 50,
 				));
 				break;
 				
 			# For a menu or a normal page
-			case 'menuFile':
+			case 'submenuFile':
+			case 'sidebarFile':
 			case false:
 			default:
+				
+				# If the page doesn't exist, then select the template
+				$editorToolbarSet = $this->richtextEditorToolbarSet;
+				switch ($this->typeOfFile) {
+					case 'submenuFile':
+						$this->richtextEditorWidth = 400;
+						$this->richtextEditorHeight = 400;
+						$editorToolbarSet = $this->richtextEditorToolbarSetBasic;
+						if (!$this->editableFile) {
+							$contents = $this->newSubmenuTemplate;
+						}
+						break;
+					case 'sidebarFile':
+						$this->richtextEditorWidth = 400;
+						$this->richtextEditorHeight = 500;
+						if (!$this->editableFile) {
+							$contents = $this->newSidebarTemplate;
+						}
+						break;
+					default:
+						if (!$this->editableFile) {
+							$title = ($this->attribute ? htmlspecialchars ($this->attribute) : $this->newPageTemplateDefaultTitle);
+							$contents = str_replace ('%title', $title, $this->newPageTemplate);
+						}
+						break;
+				}
 				
 				# If the page contains PHP (and thus the user is an administrator to have got this far in the code), give a text area instead
 				if ($this->pageContainsPhp || $textMode) {
@@ -1744,7 +1820,7 @@ class pureContentEditor
 						'height'				=> $this->richtextEditorHeight,
 						'default'				=> $contents,
 						'editorBasePath'		=> $this->richtextEditorBasePath,
-						'editorToolbarSet'		=> $this->richtextEditorToolbarSet,
+						'editorToolbarSet'		=> $editorToolbarSet,
 						'CKFinder'				=> $this->CKFinder,					// Whether to use the CKFinder plugin
 						'editorConfig'			=> array (
 							'CustomConfigurationsPath'	=> $this->richtextEditorBasePath . 'fckconfig-customised.js',
@@ -1817,12 +1893,12 @@ class pureContentEditor
 			} else {
 				
 				# Log the change
-				$html .= $this->logChange ('Submitted ' . ($this->isBlogMode ? 'blog posting' : 'page') . " {$this->page}");
+				$html .= $this->logChange ('Submitted ' . ($this->blogMode ? 'blog posting' : 'page') . " {$this->page}");
 				
 				# Construct a confirmation message
 				$delimiter = '@';
-				$message = 'A ' . ($this->isBlogMode ? 'blog posting' : 'page') . " has been submitted for the location:\n{$this->page}\n\nPlease log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}" . preg_replace ($delimiter . '^' . addcslashes ($this->filestoreRoot, $delimiter) . $delimiter, '', $filename) . '?review';
-				$subjectSuffix = ($this->isBlogMode ? 'blog posting' : 'page') . ' submitted for moderation';
+				$message = 'A ' . ($this->blogMode ? 'blog posting' : 'page') . " has been submitted for the location:\n{$this->page}\n\nPlease log on to the editing system to moderate it, at:\n\n{$this->editSiteUrl}" . preg_replace ($delimiter . '^' . addcslashes ($this->filestoreRoot, $delimiter) . $delimiter, '', $filename) . '?review';
+				$subjectSuffix = ($this->blogMode ? 'blog posting' : 'page') . ' submitted for moderation';
 			}
 		}
 		
@@ -1832,8 +1908,8 @@ class pureContentEditor
 				$html .= $this->reportErrors ('There was a problem deleting the pre-edited page.', "The filename was {$this->editableFile} .");
 				return $html;
 			}
-			$html .= $this->logChange ("Pre-edited " . ($this->isBlogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
-			$html .= "\n<p class=\"success\">The pre-edited " . ($this->isBlogMode ? 'blog posting' : 'page') . " from which this new version was created has been deleted from the filestore.</p>";
+			$html .= $this->logChange ("Pre-edited " . ($this->blogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
+			$html .= "\n<p class=\"success\">The pre-edited " . ($this->blogMode ? 'blog posting' : 'page') . " from which this new version was created has been deleted from the filestore.</p>";
 		}
 		
 		# Display the submitted content and its HTML version as a confirmation
@@ -2119,8 +2195,8 @@ class pureContentEditor
 		
 /*
 		# Determine the template
-		$this->isBlogMode = $this->isBlogMode ($this->currentDirectory . $new . '/');
-		$template = $this->templateMark . ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : str_replace ('%title', $result['title'], $this->newBlogIndexTemplate)) : str_replace ('%title', $result['title'], $this->newPageTemplate));
+		list ($this->blogMode, $this->isBlogTreeRoot) = $this->blogMode ($this->currentDirectory . $new . '/');
+		$template = $this->templateMark . ($this->blogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : str_replace ('%title', $result['title'], $this->newBlogIndexTemplate)) : str_replace ('%title', $result['title'], $this->newPageTemplate));
 		
 		# Create the front page
 		$frontPageLocation = $this->filestoreRoot . $this->currentDirectory . $new . '/' . $this->directoryIndex;
@@ -2243,7 +2319,7 @@ class pureContentEditor
 		# Determine a message for there being none
 		switch ($type) {
 			case 'folders':
-				$description = ($this->isBlogMode ? 'blogs' : 'folders');
+				$description = ($this->blogMode ? 'blogs' : 'folders');
 				break;
 			case 'postings':
 				$description = 'blog postings';
@@ -2347,7 +2423,7 @@ class pureContentEditor
 			'displayDescriptions'	=> true,
 			'displayRestrictions'	=> false,
 			'formCompleteText'	=> false,
-			'submitButtonText'		=> ($this->isBlogMode ? 'Create new blog posting' : 'Create new page'),
+			'submitButtonText'		=> ($this->blogMode ? 'Create new blog posting' : 'Create new page'),
 			'submitTo' => "{$this->page}?" . __FUNCTION__,
 			'requiredFieldIndicator' => false,
 		));
@@ -2360,7 +2436,7 @@ class pureContentEditor
 		}
 		
 		# Switch between normal and blog mode
-		if ($this->isBlogMode) {
+		if ($this->blogMode) {
 			
 			# Widgets
 			$form->heading ('', $this->blogModeReminder);
@@ -2434,7 +2510,7 @@ class pureContentEditor
 		
 		# Show the folders which currently exist if there are any
 		if (!$result) {
-			if (!$this->isBlogMode) {
+			if (!$this->blogMode) {
 				$html .= "\n<h2 id=\"current\">Current pages</h2>";
 				$html .= $this->listCurrentResources ($currentPages, 'pages');
 			}
@@ -2442,7 +2518,7 @@ class pureContentEditor
 		}
 		
 		# Construct the URL for blog mode
-		if ($this->isBlogMode) {
+		if ($this->blogMode) {
 			
 			# Get the current blog directory
 			$newFile = $this->newBlogPostingLocation ($result['date'], $result['summary']);
@@ -2459,7 +2535,7 @@ class pureContentEditor
 		# Show confirmation, but ideally redirect the user directly
 		$redirectTo = "{$newFile}?{$action}";
 		application::sendHeader (302, $this->editSiteUrl . $redirectTo);
-		$html .= "<p class=\"success\">You can now <a href=\"{$redirectTo}\">edit the new " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a>.</p>";
+		$html .= "<p class=\"success\">You can now <a href=\"{$redirectTo}\">edit the new " . ($this->blogMode ? 'blog posting' : 'page') . "</a>.</p>";
 		
 		# Return the HTML
 		return $html;
@@ -2508,10 +2584,10 @@ class pureContentEditor
 	{
 		# Do a match
 		$delimiter = '@';
-		preg_match ($delimiter . '^' . addcslashes ($this->blogTreeRoot, $delimiter) . '([^/]+)/' . $delimiter, $this->currentDirectory, $matches);
+		preg_match ($delimiter . '^' . addcslashes ($this->blogMode, $delimiter) . '([^/]+)/' . $delimiter, $this->currentDirectory, $matches);
 		
 		# Assemble the root
-		$currentBlogRoot = (isSet ($matches[1]) ? $this->blogTreeRoot . $matches[1] . '/' : NULL);
+		$currentBlogRoot = (isSet ($matches[1]) ? $this->blogMode . $matches[1] . '/' : NULL);
 		
 		# Return the root
 		return $currentBlogRoot;
@@ -2528,7 +2604,7 @@ class pureContentEditor
 		$html .= "\n<p class=\"information\">You are currently in the location: {$this->currentDirectory}</p>";
 		
 		# Switch between normal and blog mode
-		if ($this->isBlogMode && !$this->isBlogTreeRoot) {
+		if ($this->blogMode && !$this->isBlogTreeRoot) {
 			
 			# Get the list of postings
 			$currentBlogRoot = $this->getCurrentBlogRoot ();
@@ -2541,13 +2617,13 @@ class pureContentEditor
 		} else {
 			
 			# List the current pages
-			$html .= "\n<h2>" . ($this->isBlogMode ? 'Blogs in this section' : 'Sub-sections (folders) in this section') . '</h2>';
+			$html .= "\n<h2>" . ($this->blogMode ? 'Blogs in this section' : 'Sub-sections (folders) in this section') . '</h2>';
 			$currentFolders = $this->getCurrentFoldersHere ();
 			$html .= $this->listCurrentResources ($currentFolders, 'folders');
-			$html .= "\n<p>You may wish to <a href=\"?section\">create a new " . ($this->isBlogMode ? 'blog' : 'section (folder)') . '</a>' . ($currentFolders ? ' if there is not a relevant one already' : '') . '.</p>';
+			$html .= "\n<p>You may wish to <a href=\"?section\">create a new " . ($this->blogMode ? 'blog' : 'section (folder)') . '</a>' . ($currentFolders ? ' if there is not a relevant one already' : '') . '.</p>';
 			
 			# List the current pages
-			$html .= "\n<h2>" . ($this->isBlogMode ? 'Ancillary pages' : 'Pages') . ' in this section</h2>';
+			$html .= "\n<h2>" . ($this->blogMode ? 'Ancillary pages' : 'Pages') . ' in this section</h2>';
 			$currentPages = $this->getCurrentPagesHere ();
 			$html .= $this->listCurrentResources ($currentPages, 'pages');
 			$html .= "\n<p>You may wish to <a href=\"?newPage\">create a new page</a>" . ($currentPages ? ' if there is not a relevant one already' : '') . '.</p>';
@@ -3834,15 +3910,15 @@ class pureContentEditor
 			case 'edit':
 				# Redirect the user to the new page; take no other action. The previous version will need to be deleted manually by the administrator
 				application::sendHeader (302, "{$this->editSiteUrl}{$filename}?edit");
-				$html .= "\n<p><a href=\"{$filename}?edit\">Click here to edit the " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a> (as your browser has not redirected you automatically).</p>";
+				$html .= "\n<p><a href=\"{$filename}?edit\">Click here to edit the " . ($this->blogMode ? 'blog posting' : 'page') . "</a> (as your browser has not redirected you automatically).</p>";
 				break;
 				
 			case 'message':
 				# Send the message
 				$file = $this->submissions[$filename];
 				$fileLocation = $file['directory'] . $file['filename'];
-				$compiledMessage = 'With regard to the ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . html_entity_decode ($file['title'] ? " ({$file['title']})" : ' ') . ", on " . $this->convertTimestamp ($file['timestamp']) . ":\n\n{$result['message']}";
-				$html .= $this->sendMail ($this->submissions[$filename]['username'], $compiledMessage, 'message regarding a ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' you submitted');
+				$compiledMessage = 'With regard to the ' . ($this->blogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . html_entity_decode ($file['title'] ? " ({$file['title']})" : ' ') . ", on " . $this->convertTimestamp ($file['timestamp']) . ":\n\n{$result['message']}";
+				$html .= $this->sendMail ($this->submissions[$filename]['username'], $compiledMessage, 'message regarding a ' . ($this->blogMode ? 'blog posting' : 'page') . ' you submitted');
 				break;
 		}
 		
@@ -3909,10 +3985,10 @@ class pureContentEditor
 		
 		# Mail the user if required
 		if ($mailUser) {
-			$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . html_entity_decode ($submission['title'] ? " ('{$submission['title']}')" : ' ') . ', on ' . $this->convertTimestamp ($submission['timestamp']) . ', has been rejected and thus deleted.';
+			$compiledMessage = 'The ' . ($this->blogMode ? 'blog posting' : 'page') . " you submitted, {$fileLocation}" . html_entity_decode ($submission['title'] ? " ('{$submission['title']}')" : ' ') . ', on ' . $this->convertTimestamp ($submission['timestamp']) . ', has been rejected and thus deleted.';
 			if ($moreSubmissionsByThisUser) {$compiledMessage .= "\n\nThe earlier " . ($moreSubmissionsByThisUser == 1 ? 'version of this page that you submitted has' : 'versions of this page that you submitted have') . ' also been discarded.';}
 			if ($extraMessage) {$compiledMessage .= "\n\n{$extraMessage}";}
-			$html .= $this->sendMail ($submission['username'], $compiledMessage, $subjectSuffix = ($this->isBlogMode ? 'blog posting' : 'page') . ' submission rejected');
+			$html .= $this->sendMail ($submission['username'], $compiledMessage, $subjectSuffix = ($this->blogMode ? 'blog posting' : 'page') . ' submission rejected');
 		}
 		
 		# Relist the submissions if appropriate
@@ -3953,7 +4029,7 @@ class pureContentEditor
 				
 				# Copy the file across
 				if (!@copy ($newFileLiveLocationFromRoot, $archiveLocationFromRoot)) {
-					$html .= $this->reportErrors ('The new ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' was not approved, as there was a problem archiving the existing file on the live site of the same name.', "This archived file would have been at {$archiveLocationFromRoot} .");
+					$html .= $this->reportErrors ('The new ' . ($this->blogMode ? 'blog posting' : 'page') . ' was not approved, as there was a problem archiving the existing file on the live site of the same name.', "This archived file would have been at {$archiveLocationFromRoot} .");
 					$madeLiveOk = false;
 					return $html;
 				}
@@ -3967,21 +4043,21 @@ class pureContentEditor
 			$madeLiveOk = false;
 			return $html;
 		}
-		$html .= $this->logChange (($directly ? 'New ' . ($this->isBlogMode ? 'blog posting' : 'page') . ' directly' : "Submitted file $submittedFile approved and") . " saved to $newFileLiveLocation on live site");
+		$html .= $this->logChange (($directly ? 'New ' . ($this->blogMode ? 'blog posting' : 'page') . ' directly' : "Submitted file $submittedFile approved and") . " saved to $newFileLiveLocation on live site");
 		$newFileLiveLocationChopped = $this->chopDirectoryIndex ($newFileLiveLocation);
 		if ($newFileLiveLocationChopped == '/') {$newFileLiveLocationChopped = '';}
-		if ($this->isBlogMode) {
+		if ($this->blogMode) {
 			$currentBlogRoot = $this->getCurrentBlogRoot ();
 		}
-		$html .= "<p class=\"success\">The " . ($this->isBlogMode ? 'blog posting' : 'page') . ' has been approved and is now online, at: ' . ($this->isBlogMode ? "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$currentBlogRoot}\">{$this->liveSiteUrl}{$currentBlogRoot}</a> or at the posting-specific location of: " : '') . "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$newFileLiveLocationChopped}\">{$this->liveSiteUrl}{$newFileLiveLocationChopped}</a>.</p>";
+		$html .= "<p class=\"success\">The " . ($this->blogMode ? 'blog posting' : 'page') . ' has been approved and is now online, at: ' . ($this->blogMode ? "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$currentBlogRoot}\">{$this->liveSiteUrl}{$currentBlogRoot}</a> or at the posting-specific location of: " : '') . "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$newFileLiveLocationChopped}\">{$this->liveSiteUrl}{$newFileLiveLocationChopped}</a>.</p>";
 		
 		# Mail the user if required
 		if ($mailUser) {
 			$fileTimestamp = $this->convertTimestamp ($this->submissions[$submittedFile]['timestamp']);
-			$compiledMessage = 'The ' . ($this->isBlogMode ? 'blog posting' : 'page') . " you submitted, {$newFileLiveLocation}" . html_entity_decode ($this->submissions[$submittedFile]['title'] ? " ('{$this->submissions[$submittedFile]['title']}')" : ' ') . ", on {$fileTimestamp}, has been approved and is now online, at:\n\n{$this->liveSiteUrl}{$newFileLiveLocationChopped}";
+			$compiledMessage = 'The ' . ($this->blogMode ? 'blog posting' : 'page') . " you submitted, {$newFileLiveLocation}" . html_entity_decode ($this->submissions[$submittedFile]['title'] ? " ('{$this->submissions[$submittedFile]['title']}')" : ' ') . ", on {$fileTimestamp}, has been approved and is now online, at:\n\n{$this->liveSiteUrl}{$newFileLiveLocationChopped}";
 			if ($moreSubmissionsByThisUser) {$compiledMessage .= "\n\nThe earlier " . ($moreSubmissionsByThisUser == 1 ? 'version of this page that you submitted has' : 'versions of this page that you submitted have') . ' been discarded.';}
 			if ($extraMessage) {$compiledMessage .= "\n\n{$extraMessage}";}
-			$html .= $this->sendMail ($this->submissions[$submittedFile]['username'], $compiledMessage, ($this->isBlogMode ? 'blog posting' : 'page') . ' approved');
+			$html .= $this->sendMail ($this->submissions[$submittedFile]['username'], $compiledMessage, ($this->blogMode ? 'blog posting' : 'page') . ' approved');
 		}
 		
 		# Delete the staging file and log the change
@@ -4166,7 +4242,7 @@ class pureContentEditor
 		}
 		
 		# Submenu file
-		if ($fileData['filename'] == $this->pureContentMenuFile) {return 'contents of the submenu list';}
+		if ($fileData['filename'] == $this->pureContentSubmenuFile) {return 'contents of the submenu list';}
 		
 		# HTML page
 		if ($fileData['extension'] == 'html') {return 'page';}
@@ -4336,20 +4412,28 @@ class pureContentEditor
 	}
 	
 	
-	# Function to enable editing of the house style pages
-	private function houseStyle ()
+	# Function to get the house style files
+	private function getHouseStyleFiles ()
 	{
-		# Start the HTML
-		$html = '';
-		
 		# Determine the allowable types
 		$supportedFileTypes = array ('html', 'php', 'js', 'css');
 		
 		# Get the listing
 		$files = directories::flattenedFileListingFromArray ($this->technicalFileLocations, $this->liveSiteRoot, $supportedFileTypes);
 		
+		# Return the files array
+		return $files;
+	}
+	
+	
+	# Function to enable editing of the house style pages
+	private function houseStyle ()
+	{
+		# Start the HTML
+		$html = '';
+		
 		# End if there are no files
-		if (!$files) {
+		if (!$files = $this->getHouseStyleFiles ()) {
 			$html .= "\n<p>There are no technical files available for editing under this system.</p>";
 			return $html;
 		}
