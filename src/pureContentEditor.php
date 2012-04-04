@@ -1,12 +1,12 @@
 <?php
 
+
 /**
  * A class to create an editing facility on top of a pureContent-enabled site
  * 
  * @package pureContentEditor
  * @license	http://opensource.org/licenses/gpl-license.php GNU Public License
- * @author	{@link http://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-5
- * @author  {@link http://www.lucas-smith.co.uk/ Martin Lucas-Smith}
+ * @author	{@link http://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-12
  * @version See $version below
  * 
  * REQUIREMENTS:
@@ -23,12 +23,11 @@
 
 #!# Add more info for all reportError calls so that they location info is always included to enable debugging
 #!# When doing include (), do a check first for the type of file; if a text file, just do a file_get_contents surround with <pre />
-#!# Prevent creation of a permission when a more wide-ranging one exists
+#!# Prevent creation of a permission when a more wide-ranging one exists, e.g. /foo/ being created when /foo/* exists or /* exists, rather than using the ksort in permissions()
 #!# Delete all permissions when promoting to an administrator
 #!# Option not to mail yourself when you approve your own page and you are the only administrator
-#!# Audit the use of relative links
+#!# Audit the use of relative links in the richtext component
 #!# Checking writability needs to be done on the proposed file, NOT at top level
-#!# Prevent overlapping permissions, e.g. /foo/ being created when /foo/* exists or /* exists, rather than using the ksort in permissions()
 
 
 # Specialised gui for menu, title and header files (rather than using 'list pages' or entering the URL directly)
@@ -107,7 +106,6 @@ class pureContentEditor
 		'CKFinder' => false,	// Whether to use the CKFinder plugin
 		'directoryIndex' => 'index.html',		// Default directory index name
 		'virtualPages'	=> false,		// Regexp location(s) where a page is claimed already to exist but there is no physical file
-		'templateMark' => '<!-- pureContentEditor template -->',	// Internal template mark; should not be changed
 		'newPageTemplate' => "\n<h1>%title</h1>\n<p>Content starts here</p>",	// Default directory index file contents
 		'newPageTemplateDefaultTitle' => "Title goes here",	// What %title normally becomes
 		'messageSignatureGreeting' => 'Best wishes,',	// Preset text for the e-mail signature to users
@@ -155,7 +153,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.7.1';
+	private $version = '1.8.0';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -253,17 +251,18 @@ class pureContentEditor
 		$this->particularPage = $this->particularPage ();
 		$this->stagingPage = $this->stagingPage ($this->page);
 		
-		# Ensure that a page does exist
-		if ($errorsHtml = $this->ensurePagePresent ()) {
-			$html .= $errorsHtml;
-			return $html;
-		}
+		# Determine if the page is a 404
+		$this->pageIs404 = $this->pageIs404 ();
+		
+		# Determine if the page is being aliased
+		$this->pageIsBeingAliased = $this->pageIsBeingAliased ();
 		
 		# Determine whether to use the staging page
 		$this->pageToUse = $this->pageToUse ();
 		
 		# Determine the editable version to use
-		if (!$this->editableFile = $this->editableFile ($errorsHtml)) {
+		$this->editableFile = $this->editableFile ($errorsHtml);
+		if ($errorsHtml) {
 			$html .= $errorsHtml;
 			return $html;
 		}
@@ -511,71 +510,42 @@ class pureContentEditor
 	}
 	
 	
-	# Function to ensure that a page is present
-	private function ensurePagePresent ()
+	# Function to determine if the page is not present
+	private function pageIs404 ()
 	{
-		# Start a container for HTML errors
-		$errorsHtml = '';
-		
-		# Check here whether the directory contains an index file
-		$this->directoryContainsIndex = $this->directoryContainsIndex ();
-		
-		# Start from the assumption that the page is present
-		$pagePresent = true;
+		# If there is a staging page, the page is present
+		if ($this->stagingPage) {return false;}
 		
 		# If the server has thrown a 404 and there is no staging page, replicate the 404
-		$this->pageIs404 = false;
 		if (isSet ($_SERVER['REDIRECT_STATUS'])) {
 			if ($_SERVER['REDIRECT_STATUS'] == '404') {
-				if (!$this->stagingPage) {
-					$this->pageIs404 = true;
-					$pagePresent = false;
-				}
+				return true;
 			}
 		}
 		
-		# If neither a live page nor a staging page is present, set the page as not found
-		if (!$this->livePage && !$this->stagingPage) {
-			$pagePresent = false;
-		}
+		# Return false
+		return false;
+	}
+	
+	
+	# Function to determine if the page is being aliased (basically if the page is absent on the staging side, but there is a response from the live site, then aliasing is likely to be in use)
+	private function pageIsBeingAliased ()
+	{
+		# Return false if aliasing checks are not permitted
+		if (!$this->enableAliasingChecks) {return false;}
 		
-		# Assume that the page is not being aliased (may be overriden below)
-		$this->pageIsBeingAliased = false;
+		# If there is a live page or a staging page then the page is not being aliased
+		if ($this->livePage || $this->stagingPage) {return false;}
 		
-		# If the page is not present, throw a 404
-		if (!$pagePresent) {
-			
-			# If alias checking is allowed, check if the file exists on the live site; if it does then aliasing is likely to be in use
-			if ($this->enableAliasingChecks) {
-				if (@file_get_contents ($this->liveSiteUrl . $this->page)) {
-					if (!$this->pageIs404) {
-						$this->pageIsBeingAliased = true;
-						return $errorsHtml;
-					}
-				}
+		# If the page is not a 404 but an HTTP request finds that there is a page response, the page is being aliased
+//		if (!$this->pageIs404) {
+			if (@file_get_contents ($this->liveSiteUrl . $this->page)) {
+				return true;
 			}
-			
-			# Determine if the action requires an index page to be present
-			$pageContentChangeActions = array ('edit', 'section', 'newPage', );
-			$isPageContentChangeAction = (in_array ($this->action, $pageContentChangeActions));
-			
-			# If using a page content action, but there isn't an index, force creation
-			if ($isPageContentChangeAction && !$this->directoryContainsIndex) {
-				$this->action = 'newPage';
-				return $errorsHtml;
-			}
-			
-			# If dealing with a page content action, or just browsing
-			if ($isPageContentChangeAction || $this->action == 'browse') {
-				application::sendHeader (404);
-				$errorsHtml .= "\n" . '<h1>Page not found</h1>';
-				$errorsHtml .= "\n" . '<p class="failure">The page you requested cannot be found. Do you want to <a href="' . $this->nearestPage ($this->page) . '?newPage=' . htmlspecialchars (urlencode (basename ($this->page))) . '">create a new page here</a>?</p>';
-				return $errorsHtml;
-			}
-		}
+//		}
 		
 		# Otherwise return no errors
-		return $errorsHtml;
+		return false;
 	}
 	
 	
@@ -601,17 +571,20 @@ class pureContentEditor
 	# Function to determine which page to use
 	private function pageToUse ()
 	{
+		# If the file is new, return false as there is no page to use
+		if (!$this->particularPage && !$this->livePage && !$this->stagingPage) {return false;}
+		
 		# If a particular page has been defined, return that
 		if ($this->particularPage) {return 'particular';}
 		
-		# Flag yes if there is no live page (NB ensurePagePresent() will have been run by now)
+		# Flag yes if there is no live page (NB pageNotPresent() will have been run by now)
 		if (!$this->livePage) {return 'staging';}
 		
 		# Flag no if there is no staging page
 		if (!$this->stagingPage) {return 'live';}
 		
 		# If, now that a staging page is confirmed present, the original is being requested, return false
-		if ((($this->action == 'edit') || ($this->action == 'browse')) && ($this->attribute != 'original')) {return 'staging';}
+		if ((($this->action == 'edit') || ($this->action == 'browse')) && ($this->attribute != 'live')) {return 'staging';}
 		
 		# Otherwise return false
 		return 'live';
@@ -621,6 +594,9 @@ class pureContentEditor
 	# Function to determine the latest version in use
 	private function editableFile (&$errorsHtml = '')
 	{
+		# If the file is new, return true
+		if (!$this->pageToUse) {return false;}
+		
 		# Define the latest version
 		switch ($this->pageToUse) {
 			case 'live':
@@ -634,7 +610,7 @@ class pureContentEditor
 				break;
 		}
 		
-		# Check that the file is readable (this is done rather than checking the return value of file_get_contents in editableFileContents () because the latter may return a zero-length file)
+		# Check that the file is readable
 		if (!is_readable ($editableFile)) {
 			$errorsHtml .= $this->reportErrors ('There was a problem opening the file.', "The file name is {$editableFile} .");
 			return false;
@@ -648,7 +624,10 @@ class pureContentEditor
 	# Function to get the contents of the latest version in use
 	private function editableFileContents ()
 	{
-		# Get the contents (NB is readable has been done within editableFile(); no false checking is done here, as this could indicate a zero-length file)
+		# If there is no file
+		if (!$this->editableFile) {return false;}
+		
+		# Read the file contents, which we already know is readable
 		$contents = file_get_contents ($this->editableFile);
 		
 		# Return the contents
@@ -822,6 +801,18 @@ class pureContentEditor
 		
 		# Return the result
 		return $currentDirectory;
+	}
+	
+	
+	# Function to check if the current directory exists
+	private function currentDirectoryExists ()
+	{
+		# If the current directory exists on the live or staging sides, return true
+		if (is_dir ($this->liveSiteRoot . $this->currentDirectory)) {return true;}
+		if (is_dir ($this->filestoreRoot . $this->currentDirectory)) {return true;}
+		
+		# There is no such directory, so return false
+		return false;
 	}
 	
 	
@@ -1083,8 +1074,11 @@ class pureContentEditor
 		# Return false if checking not required
 		if (!$this->enablePhpCheck) {return false;}
 		
-		# Set a flag for whether the page contains the string <?php ; return false if found
-		return (strpos ($this->editableFileContents, '<?php') !== false);
+		# If in memory, then return false
+		if ($this->editableFileContents === false) {return false;}
+		
+		# Check whether the page contains the string <?php
+		return (substr_count ($this->editableFileContents, '<?php'));
 	}
 	
 	
@@ -1111,6 +1105,8 @@ class pureContentEditor
 		
 		# Javascript files
 		if (preg_match ($delimiter . '\.js((\.[0-9]{8}-[0-9]{6}\..+)?)$' . $delimiter, $filename)) {return 'jsFile';}
+		
+		// If $this->editableFile === false then this will also be assumed to be a page below as none of the above will have caught
 		
 		# Default to a page
 		return 'page';
@@ -1188,7 +1184,7 @@ class pureContentEditor
 			),
 */
 			
-			'permissionMine' => array (
+			'myAreas' => array (
 				'title' => 'My areas',
 				'tooltip' => 'List the areas which I have access to make changes to',
 				'administratorsOnly' => false,
@@ -1197,7 +1193,7 @@ class pureContentEditor
 			
 			'showCurrent' => array (
 				'title' => 'List pages here',
-				'title' => ($this->isBlogMode ? ($this->isBlogTreeRoot ? 'List blogs/pages here' : 'List blog entries') : 'List pages/sections here'),
+				'title' => ($this->isBlogMode ? ($this->isBlogTreeRoot ? 'List blogs/pages here' : 'List blog entries') : 'Pages/sections here'),
 				'tooltip' => ($this->isBlogMode ? ($this->isBlogTreeRoot ? 'List the blogs and other ancillary pages available' : 'List the entries in the current blog') : 'List the pages in the current section (folder) of the website'),
 				'administratorsOnly' => false,
 				'grouping' => 'Additional',
@@ -1411,7 +1407,7 @@ class pureContentEditor
 	
 	
 	# Function to find the nearest page to the current (e.g. if /foo/bar/zoo.html is supplied but doesn't exist, but /foo/bar/index.html does, return that, else if /foo/index.html exists, return that)
-	private function nearestPage ($page)
+	private function nearestPage ($page, $asSection = false)
 	{
 		# If the page exists, return it
 		if ($this->livePage ($page) || $this->stagingPage ($page)) {
@@ -1426,32 +1422,36 @@ class pureContentEditor
 		# Traverse up each directory until it is found
 		while ($page != $root) {
 			$directoryAbove = dirname ($page);
-			$try = $directoryAbove . ($directoryAbove == '/' ? '' : '/') . $this->directoryIndex;
+			$directoryAboveSlashed = $directoryAbove . ($directoryAbove == '/' ? '' : '/');
+			$try = $directoryAboveSlashed . $this->directoryIndex;
 			if ($this->livePage ($try) || $this->stagingPage ($try)) {
-				return $try;
+				return $directoryAboveSlashed . ($asSection ? '' : $this->directoryIndex);
 			}
 			$page = $directoryAbove;	// Try next up; eventually this will get to /
 		}
 		
 		# If for some reason it is not found, return the main page of the site as a fallback
-		return $root . $this->directoryIndex;
+		return $root . ($asSection ? '' : $this->directoryIndex);
 	}
 	
 	
 	# Function to create a version message
 	private function versionMessage ($action)
 	{
+		# End if the page doesn't exist (i.e. is in memory)
+		if (!$this->editableFile) {return false;}
+		
 		# Define the message
 		$versionMessage  = '';
 		$addWarning = false;
 		switch ($this->pageToUse) {
 			case 'staging':
 				$versionMessage  = 'You are ' . str_replace ('browse', 'brows', "{$action}ing") . " from an unapproved edition of this page (<span title=\"(saved at " . $this->convertTimestamp ($this->submissions[$this->stagingPage]['timestamp']) . " by " . $this->convertUsername ($this->submissions[$this->stagingPage]['username']) . ')">hover here for details</span>), the latest version available.';
-				if ($this->livePage) {$versionMessage .= "<br />You can <a href=\"{$this->page}?{$action}=original\">{$action} from the live version</a> instead.";}
+				if ($this->livePage) {$versionMessage .= "<br />You can <a href=\"{$this->page}?{$action}=live\">{$action} from the live version</a> instead.";}
 				break;
 			case 'live':
 				$addWarning = true;
-				if ($this->stagingPage) {$versionMessage .= 'You are not ' . str_replace ('browse', 'brows', "{$action}ing") . " from the latest version, but the currently-live version instead.<br />You may want to <a href=\"{$this->page}" . ($action == 'edit' ? "?$action" : '') . "\">{$action} from the latest submitted (but unapproved) version</a> instead.";}
+				if ($this->stagingPage) {$versionMessage .= "There is a <a href=\"{$this->page}" . ($action == 'edit' ? "?{$action}" : '') . '">more recent version</a> submitted for review than the live page below.';}
 				break;
 			case 'particular':
 				# If the page is not the latest staging page available, provide a link to that
@@ -1471,7 +1471,7 @@ class pureContentEditor
 		if (!$versionMessage) {return;}
 		
 		# Construct the HTML
-		$html = "\n<p" . ($addWarning ? ' class="information"' : '') . '>' . ($addWarning ? '<strong>Warning</strong>' : 'Note') . ": {$versionMessage}</p>";
+		$html = "\n<p" . ($addWarning ? ' class="warning"' : '') . '>' . ($addWarning ? '<strong>Warning</strong>' : 'Note') . ": {$versionMessage}</p>";
 		
 		# Return the HTML
 		return $html;
@@ -1482,7 +1482,7 @@ class pureContentEditor
 	private function logout ()
 	{
 		# Create the logout link
-		$html  = "\n<p class=\"information\">" . ($this->logout ? "<a href=\"{$this->logout}\">Please click here to log out.</a>" : 'To log out, close all instances of your web browser.') . '</p>';
+		$html  = "\n<p class=\"warning\">" . ($this->logout ? "<a href=\"{$this->logout}\">Please click here to log out.</a>" : 'To log out, close all instances of your web browser.') . '</p>';
 		
 		# Return the HTML
 		return $html;
@@ -1526,12 +1526,24 @@ class pureContentEditor
 		# Start the HTML
 		$html = '';
 		
-		# Define a message that it cannot be browsed for technical reasons
-		$message = "\n<p class=\"information\">Note: for technical reasons, <strong>this page cannot be " . ($this->pageIsBeingAliased ? 'browsed or ' : '') . "edited</strong> using the pureContentEditor system, as it contains special processing instructions and so has to be treated with special care. " . ($this->pageIsBeingAliased ? "(Technically speaking, the page is being 'aliased' at server level.) " : '') . "Please <a href=\"{$this->page}?message\">contact the server administrator</a> to discuss making changes to this page.</p>";
-		
 		# If the page is being aliased, stop at this point
 		if ($this->pageIsBeingAliased) {
-			$html .= $message;
+			$html .= "\n<p class=\"warning\">Note: <strong>this page cannot be browsed or edited</strong> because it is being magically mirrored from another site. Please <a href=\"{$this->page}?message\">contact the server administrator</a> if you need to edit it.</p>";
+			return $html;
+		}
+		
+		# If the page is missing, give a 404
+		if ($this->pageIs404 || (!$this->livePage && !$this->stagingPage)) {
+			application::sendHeader (404);
+			$html  = "\n" . '<h1>Page not found</h1>';
+			#!# If $this->page is "/foo/bar" then this link will do nothing
+			$html .= "\n" . '<p>There is no page <em>' . htmlspecialchars ($this->page) . '</em>. Do you want to <a href="' . htmlspecialchars ($this->page) . '?edit">create a new page</a> with that name here?</p>';
+			return $html;
+		}
+		
+		# If there is no directory index, state that this is required
+		if (!$this->directoryContainsIndex ()) {
+			$html = "<p class=\"warning\">This section currently contains no front page ({$this->directoryIndex}). You need to <a href=\"{$this->currentDirectory}{$this->directoryIndex}?edit\">create an index page for this section</a> before creating other pages.</p>";
 			return $html;
 		}
 		
@@ -1543,7 +1555,9 @@ class pureContentEditor
 			
 			# Administrators get a warning that this can only be edited as HTML rather than in WYSIWYG mode
 			if ($this->userIsAdministrator) {
-				$message = "\n<p class=\"information\">Because this page contains PHP instructions, it cannot be edited using the normal visual mode. However, as you are an administrator, you are able to <a href=\"{$this->page}?edit\">edit the HTML/PHP in code mode</a>.</p>";
+				$message = "\n<p class=\"warning\">This page cannot be edited using the normal visual mode because it contains programming code (PHP). However, as you are an administrator, you are able to <a href=\"{$this->page}?edit\">edit the HTML/PHP in code mode</a>.</p>";
+			} else {
+				$message = "\n<p class=\"warning\">This page cannot be edited here because it contains programming code (PHP). Please <a href=\"{$this->page}?message\">contact the server administrator</a> if you need to edit it.</p>";
 			}
 			
 			# Give a message that the page cannot be edited with this system
@@ -1586,10 +1600,10 @@ class pureContentEditor
 	private function treesPotentiallyWritable ($location, &$html)
 	{
 		# Do the check for each of the roots
-		$roots = array ($this->filestoreRoot, $this->liveSiteRoot);
-		foreach ($roots as $root) {
+		$roots = array ('filestore' => $this->filestoreRoot, 'live site' => $this->liveSiteRoot);
+		foreach ($roots as $description => $root) {
 			if (!application::directoryIsWritable ($location, $root . '/')) {
-				$html .= $this->reportErrors ('Unfortunately, the operation failed - the filestore is not set up properly.', "The path to {$root}{$location} is not writable.");
+				$html .= $this->reportErrors ("Unfortunately, the operation failed - the {$description} is not set up properly.", "The path to {$root}{$location} is not writable.");
 				return false;
 			}
 		}
@@ -1610,6 +1624,39 @@ class pureContentEditor
 			return $html;
 		}
 		
+		
+		# If the current section does not exist, require section creation as high up the tree as necessary
+		if ($requireSectionCreationHtml = $this->requireSectionCreation ()) {
+			$html .= $requireSectionCreationHtml;
+			return $html;
+		}
+		
+		# If there is no directory index, state that this is required
+		$pagename = basename ($this->page);
+		$requestIsIndex = ($pagename == $this->directoryIndex);
+		$forceIndexPageCreation = (!$requestIsIndex && !$this->directoryContainsIndex ());
+		if ($forceIndexPageCreation) {
+			$html = "<p class=\"warning\">This section currently contains no front page ({$this->directoryIndex}). You need to <a href=\"{$this->currentDirectory}{$this->directoryIndex}?edit\">create an index page for this section</a> before creating other pages.</p>";
+			return $html;
+		}
+		
+		# Check that the proposed filename is valid
+#!# Needs to check if the page already exists - should allow editing of a badly-named existing page
+		$regexp = $this->validPageNameRegexp ();
+		$delimiter = '@';
+		if (!preg_match ($delimiter . addcslashes ($regexp, $delimiter) . $delimiter, $pagename)) {
+			$html = "<p class=\"warning\">The pagename you requested " . htmlspecialchars ($pagename) . " is invalid. Please go to <a href=\"{$this->currentDirectory}?newPage\">create a new page</a> again.</p>";
+			return $html;
+		}
+		
+		# If the page doesn't exist, then select the template
+		if (!$this->livePage ($this->page) && !$this->stagingPage ($this->page)) {
+			$title = ($this->attribute ? htmlspecialchars ($this->attribute) : $this->newPageTemplateDefaultTitle);
+			$this->editableFileContents = str_replace ('%title', $title, $this->newPageTemplate);
+		}
+		
+		
+		
 		# Create the form itself
 		$form = new form (array (
 			'name' => 'purecontent',
@@ -1622,9 +1669,6 @@ class pureContentEditor
 			// 'unsavedDataProtection' => true, // Seemingly has no effect on the richtext area unfortunately
 		));
 		
-		# Determine if the page is new
-		$pageIsNew = $this->pageIsTemplate ($this->editableFileContents);
-		
 		# Add a reminder when in blog mode
 		$heading  = '';
 		if ($this->isBlogMode) {
@@ -1632,13 +1676,14 @@ class pureContentEditor
 		}
 		
 		# Give a message for what file is being edited, and if necessary a PHP care warning
-		$heading .= ($pageIsNew ? '' : $this->versionMessage (__FUNCTION__)) . ($this->pageContainsPhp ? "</p>\n<p class=\"information\">Take care when editing this page as it contains special PHP code." : '');
+		$heading .= $this->versionMessage (__FUNCTION__);
+		$heading .= ($this->pageContainsPhp ? "</p>\n<p class=\"warning\">Take care when editing this page as it contains programming code (PHP)." : '');
 		
 		# If the file is a technical file, then replace the heading with a strong warning
 		$textMode = false;
 		if ($this->matchLocation ($this->technicalFileLocations, $this->page)) {
 			$textMode = true;
-			$heading  = "\n<p class=\"information\"><strong>Take special care when editing this page as changes to this technical file could disrupt the entire site.</strong></p><p>Alternatively, you may wish to <a href=\"/?houseStyle\">return to the list of house style / technical files</a>.</p>";
+			$heading  = "\n<p class=\"warning\"><strong>Take special care when editing this page as changes to this technical file could disrupt the entire site.</strong></p><p>Alternatively, you may wish to <a href=\"/?houseStyle\">return to the list of house style / technical files</a>.</p>";
 		}
 		
 		# Add the heading
@@ -1654,16 +1699,17 @@ class pureContentEditor
 			case 'titleFile':
 				$form->input (array (
 					'name'			=> 'content',
-					'title'					=> 'Title for the section (title file)',
+					'title'			=> 'Title for the section (title file)',
 					'description'	=> "Please capitalise correctly. This is the text that will appear in the breadcrumb trail (the 'You are in...' line) and must not be too long.",
-					'default'			=> ($pageIsNew ? '' : $contents),
-					'required'				=> true,
-					'autofocus' => true,
+					'default'		=> $contents,
+					'required'		=> true,
+					'autofocus' 	=> true,
 				));
 				break;
 				
 			# For a menu or a normal page
 			case 'menuFile':
+			case false:
 			default:
 				
 				# If the page contains PHP (and thus the user is an administrator to have got this far in the code), give a text area instead
@@ -1748,9 +1794,8 @@ class pureContentEditor
 			return $html;
 		}
 		
-		# Get the submitted content, removing the template mark
+		# Get the submitted content
 		$content = $result['content'];
-		$content = preg_replace ("|^{$this->templateMark}|DsiU", '', $content);
 		
 		# Determine whether to approve directly
 		$approveDirectly = ($this->userCanMakeFilesLiveDirectly ? $result['preapprove'][$makeLiveDirectlyText] : false);
@@ -1805,16 +1850,6 @@ class pureContentEditor
 				default:
 					$html .= $this->sendMail ($result['administrators'], $message, $subjectSuffix);
 			}
-		}
-		
-		# Delete the template if it is one
-		if ($this->pageIsTemplate ($contents)) {
-			if (!@unlink ($this->editableFile)) {
-				$html .= $this->reportErrors ('There was a problem deleting the template file.', "The filename was {$this->editableFile} .");
-				return $html;
-			}
-			$html .= $this->logChange ("Template " . ($this->isBlogMode ? 'blog posting' : 'page') . " $this->page deleted from filestore.");
-			$html .= "\n<p class=\"success\">The template from which this new " . ($this->isBlogMode ? 'blog posting' : 'page') . " was created has been deleted from the filestore.</p>";
 		}
 		
 		# Return the HTML
@@ -1938,17 +1973,6 @@ class pureContentEditor
 	}
 	
 	
-	# Function to determine whether a page is the template
-	private function pageIsTemplate ($contents)
-	{
-		# Determine the template in use
-		$templateHtml = ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : $this->newBlogIndexTemplate) : str_replace ('%title', $this->newPageTemplateDefaultTitle, $this->newPageTemplate));
-		
-		# Return true if it's the same as the template or starts with the template mark
-		return (($contents == $templateHtml) || (preg_match ("|^{$this->templateMark}|DsiU", $contents)));
-	}
-	
-	
 	# Function to show a page (with the HTML version after)
 	private function showMaterial ($content, $class = 'success')
 	{
@@ -1983,6 +2007,12 @@ class pureContentEditor
 		# Start the HTML
 		$html = '';
 		
+		# If the current section does not exist, require section creation as high up the tree as necessary
+		if ($requireSectionCreationHtml = $this->requireSectionCreation ()) {
+			$html .= $requireSectionCreationHtml;
+			return $html;
+		}
+		
 		# Get the current folders for the live and staging areas
 		$currentFolders = $this->getCurrentFoldersHere ();
 		
@@ -1990,7 +2020,7 @@ class pureContentEditor
 		$currentFoldersRegexp = $this->currentPagesFoldersRegexp ($currentFolders);
 		
 		# Hack to get the current page submitted, used for a link if necessary
-		$folderSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlspecialchars ($_POST['form']['new']) . '/' : '');
+		$folderSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['urlslug'])) ? htmlspecialchars ($_POST['form']['urlslug']) . '/' : '');
 		
 		# Form for the new folder
 		$form = new form (array (
@@ -1999,12 +2029,13 @@ class pureContentEditor
 			'displayRestrictions'	=> false,
 			'formCompleteText'	=> false,
 			'submitButtonText'		=> 'Create new section (folder)',
+			'requiredFieldIndicator' => false,
 		));
 		$form->heading ('', 
 			($this->isBlogTreeRoot ? 
 				'<p>Create a new blog here.' . ($currentFolders ? ' Current blogs are <a href="#currentfolders">listed below</a>.' : '') . '</p>'
 			: 
-				'<p><strong>A folder is a set of pages on the same topic</strong> (as distinct from a page within an existing topic area).' . ($currentFolders ? ' Current folders are <a href="#currentfolders">listed below</a>.' : '') . '</p>'
+				'<p class="information"><strong>A section is a set of pages on the same topic</strong> (as distinct from a page within an existing topic area).' . ($currentFolders ? ' <a href="#current">Current folders</a> are listed below.' : '') . '</p>'
 			)
 			. '<br />'
 		);
@@ -2048,6 +2079,7 @@ class pureContentEditor
 			'size' => ceil (0.8 * $this->maximumFileAndFolderNameLength),
 			'regexp'				=> "^[a-z0-9]{1,{$this->maximumFileAndFolderNameLength}}$",
 			'disallow' => ($currentFolders ? array ($currentFoldersRegexp => "Sorry, <a href=\"{$folderSubmitted}\">a " . ($this->isBlogTreeRoot ? 'blog' : 'folder') . " of that name</a> already exists, as shown in the list below. Please try another.") : false),
+			'default' => $this->attribute,
 			'prepend' => $this->currentDirectory . ' ',
 			'append'  => '/',
 			'placeholder'	=> 'foldername',
@@ -2058,7 +2090,7 @@ class pureContentEditor
 		
 		# Show the folders which currently exist if there are any
 		if (!$result) {
-			$html .= "\n<h3>Current folders</h2>";
+			$html .= "\n<h2 id=\"current\">Current folders</h2>";
 			$html .= $this->listCurrentResources ($currentFolders, 'folders');
 			return $html;
 		}
@@ -2085,6 +2117,7 @@ class pureContentEditor
 		# Log the change
 		$html .= $this->logChange ("Created title file {$this->currentDirectory}{$new}{$this->pureContentTitleFile}");
 		
+/*
 		# Determine the template
 		$this->isBlogMode = $this->isBlogMode ($this->currentDirectory . $new . '/');
 		$template = $this->templateMark . ($this->isBlogMode ? ($this->isBlogTreeRoot ? $this->newBlogTreeRootTemplate : str_replace ('%title', $result['title'], $this->newBlogIndexTemplate)) : str_replace ('%title', $result['title'], $this->newPageTemplate));
@@ -2098,10 +2131,12 @@ class pureContentEditor
 		
 		# Log the change
 		$html .= $this->logChange ("Created template index page {$this->currentDirectory}{$new}/{$this->directoryIndex}");
+*/
 		
 		# Confirm success
-		application::sendHeader (302, "{$this->editSiteUrl}{$this->currentDirectory}{$new}/{$this->directoryIndex}?edit");
-		$html .= "<p class=\"success\">The new folder and title file were successfully created. You should now <a href=\"{$new}/{$this->directoryIndex}?edit\">edit the front page of this new section</a>.</p>";
+		$redirectTo = "{$this->currentDirectory}{$new}/{$this->directoryIndex}?edit=" . urlencode ($result['title']);
+		application::sendHeader (302, $this->editSiteUrl . $redirectTo);
+		$html .= "<p class=\"success\">You can now <a href=\"{$redirectTo}\">edit the front page of this new section</a>.</p>";
 		
 		# Return the HTML
 		return $html;
@@ -2141,8 +2176,8 @@ class pureContentEditor
 	# Function to get the current pages here
 	private function getCurrentPagesHere ($useDirectory = false, $fullTree = false, $supportedFileTypes = array ('html', 'txt'))
 	{
-		# Determine the directory to use
-		$useDirectory = ($useDirectory ? $useDirectory : $this->currentDirectory);
+		# Use the current directory if none specified
+		if (!$useDirectory) {$useDirectory = $this->currentDirectory;}
 		
 		# Get the live and staging folders; a check is done first for whether it exists
 		$currentFilesLive = array ();
@@ -2161,6 +2196,7 @@ class pureContentEditor
 			}
 		}
 		
+		# Get the current staging files
 		$currentFilesStaging = array ();
 		foreach ($this->submissions as $submission => $attributes) {
 			if ($attributes['directory'] == $useDirectory) {
@@ -2168,9 +2204,12 @@ class pureContentEditor
 			}
 		}
 		
+		/*
 		# Add in the current page (this is only necessary when the page is being aliased)
 		#!# This seems to be causing blog page addition breakage, or somewhere else in this function is - says the page already exists when it doesn't
+		$currentFilesCurrentPage = array ();
 		$currentFilesCurrentPage[] = basename ($this->page);
+		*/
 		
 		# Add in virtual pages, if any; for instance a virtual page of ^/foo/([^/]+)/index.html$ will create index.html as a name when in /foo/bar/
 		$currentFilesVirtualPages = array ();
@@ -2189,7 +2228,7 @@ class pureContentEditor
 		}
 		
 		# Merge, unique and sort the list
-		$currentFiles = array_merge ($currentFilesLive, $currentFilesStaging, $currentFilesCurrentPage, $currentFilesVirtualPages);
+		$currentFiles = array_merge ($currentFilesLive, $currentFilesStaging, /* $currentFilesCurrentPage, */ $currentFilesVirtualPages);
 		$currentFiles = array_unique ($currentFiles);
 		sort ($currentFiles);
 		
@@ -2201,8 +2240,21 @@ class pureContentEditor
 	# Function to show a current folder listing
 	private function listCurrentResources ($currentResources, $type = 'folders')
 	{
+		# Determine a message for there being none
+		switch ($type) {
+			case 'folders':
+				$description = ($this->isBlogMode ? 'blogs' : 'folders');
+				break;
+			case 'postings':
+				$description = 'blog postings';
+				break;
+			default:
+				$description = $type;
+		}
+		$noneHtml = "\n<p>There are no {$description} in this area at present.</p>";
+		
 		# Create a list if any exist
-		if (!$currentResources) {return false;}
+		if (!$currentResources) {return $noneHtml;}
 		
 		# Add links to each, adding a slash if the resource type is folders
 		$currentResourcesLinked = array ();
@@ -2218,16 +2270,15 @@ class pureContentEditor
 			if ($this->matchLocation ($this->bannedLocations, $this->currentDirectory . $resource)) {continue;}
 			
 			# Add the item, correctly formatted
-			$link = $resource . ($type == 'folders' ? $this->directoryIndex : '');
 			#!# Ideally get the title, but this means working out which file (live or staging) to open
-			$currentResourcesLinked[] = "<a href=\"$link\">$resource</a>";
+			$currentResourcesLinked[] = "<a href=\"{$resource}\">{$resource}</a>";
 		}
 		
 		# End if none
-		if (!$currentResourcesLinked) {return false;}
+		if (!$currentResourcesLinked) {return $noneHtml;}
 		
 		# Construct the HTML, splitting into a multi-column layout if there are a lot of items
-		$html  = "\n<p id=\"information\">The following are the " . (($this->isBlogTreeRoot && $type == 'folders') ? 'blogs' : $type) . ($type == 'postings' ? ' in this blog' : ' which currently exist in this area') . ':</p>';
+		$html  = "\n<p>The following are the " . (($this->isBlogTreeRoot && $type == 'folders') ? 'blogs' : $type) . ($type == 'postings' ? ' in this blog' : ' which currently exist in this area') . ':</p>';
 		if (count ($currentResourcesLinked) <= 40) {
 			$html .= application::htmlUl ($currentResourcesLinked);
 		} else {
@@ -2259,11 +2310,28 @@ class pureContentEditor
 	}
 	
 	
+	# Function to provide a regexp for a proposed new page name is valid
+	private function validPageNameRegexp ()
+	{
+		# Take account of content negotiation semantics for filenames in the regexp
+		$regexp = '^(' . ($this->forcePagenameIndex ? 'index' : '[a-z0-9]') . "{1,{$this->maximumFileAndFolderNameLength}}" . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.html' : '\.html') . '|\.menu' . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.html' : '\.html') . '|\.title' . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.txt' : '\.txt') . ')$';
+		
+		# Return the regexp
+		return $regexp;
+	}
+	
+	
 	# Function to create a new page
 	private function newPage ()
 	{
 		# Start the HTML
 		$html = '';
+		
+		# If the current section does not exist, require section creation as high up the tree as necessary
+		if ($requireSectionCreationHtml = $this->requireSectionCreation ()) {
+			$html .= $requireSectionCreationHtml;
+			return $html;
+		}
 		
 		# Ensure that the tree is writable, or end
 		if (!$this->treesPotentiallyWritable ($this->currentDirectory, $html)) {
@@ -2281,12 +2349,14 @@ class pureContentEditor
 			'formCompleteText'	=> false,
 			'submitButtonText'		=> ($this->isBlogMode ? 'Create new blog posting' : 'Create new page'),
 			'submitTo' => "{$this->page}?" . __FUNCTION__,
+			'requiredFieldIndicator' => false,
 		));
 		
 		# If there is no directory index, state that this is required
-		$forceIndexPageCreation = (!$this->directoryContainsIndex && !$this->pageIsBeingAliased);
+		$forceIndexPageCreation = (!$this->pageIsBeingAliased && !$this->directoryContainsIndex ());
 		if ($forceIndexPageCreation) {
-			$form->heading ('', "<p class=\"information\">This section currently contains no front page ({$this->directoryIndex}). You are required to create one before proceeding further.</p>");
+			$html = "<p class=\"warning\">This section currently contains no front page ({$this->directoryIndex}). You need to <a href=\"{$this->currentDirectory}{$this->directoryIndex}?edit\">create an index page for this section</a> before creating other pages.</p>";
+			return $html;
 		}
 		
 		# Switch between normal and blog mode
@@ -2327,13 +2397,10 @@ class pureContentEditor
 			$currentPagesRegexp = $this->currentPagesFoldersRegexp ($currentPages, $allowIndexAliasOverwriting = ($this->allowIndexAliasOverwriting && $forceIndexPageCreation));
 			
 			# Hack to get the current page submitted, used for a link if necessary
-			$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['new'])) ? htmlspecialchars ($_POST['form']['new'], ENT_COMPAT, $this->charset) : '');
-			
-			# Take account of content negotiation semantics for filenames in the regexp
-			$regexp = '^(' . ($this->forcePagenameIndex ? 'index' : '[a-z0-9]') . "{1,{$this->maximumFileAndFolderNameLength}}" . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.html' : '\.html') . '|\.menu' . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.html' : '\.html') . '|\.title' . ($this->contentNegotiation ? '((\.[-a-z]+)?)\.txt' : '\.txt') . ')$';
+			$pageSubmitted = ((isSet ($_POST['form']) && isSet ($_POST['form']['newpage'])) ? htmlspecialchars ($_POST['form']['newpage'], ENT_COMPAT, $this->charset) : '');
 			
 			# Heading
-			$form->heading ('', '<p><strong>A page is more detail within an existing section</strong>, not a whole new topic area.');
+			$form->heading ('', '<p class="information"><strong>A page is more detail within an existing section</strong>, not a whole new topic area.' . ($currentPages ? ' <a href="#current">Current pages</a> are listed below.' : '') . '</p><br />');
 			
 			# Page name
 			$description = "
@@ -2352,7 +2419,7 @@ class pureContentEditor
 				'title'			=> 'New page address',
 				'description'	=> ($nameIsEditable ? $description : false),
 				'required'				=> true,
-				'regexp'				=> $regexp,
+				'regexp'				=> $this->validPageNameRegexp (),
 				'default'  => $newPageName = ($nameIsEditable ? $this->attribute : $this->directoryIndex),
 				'editable' => $nameIsEditable,
 				'disallow' => ($currentPages ? array ($currentPagesRegexp => "Sorry, <a href=\"{$pageSubmitted}\">a page of that name</a> already exists, as shown in the list below. Please try another.") : false),
@@ -2368,7 +2435,7 @@ class pureContentEditor
 		# Show the folders which currently exist if there are any
 		if (!$result) {
 			if (!$this->isBlogMode) {
-				$html .= "\n<h3>Current pages</h2>";
+				$html .= "\n<h2 id=\"current\">Current pages</h2>";
 				$html .= $this->listCurrentResources ($currentPages, 'pages');
 			}
 			return $html;
@@ -2379,30 +2446,43 @@ class pureContentEditor
 			
 			# Get the current blog directory
 			$newFile = $this->newBlogPostingLocation ($result['date'], $result['summary']);
+#!# Not yet working
+			$action = 'edit=blog';
 			
 		} else {
 			
 			# Determine the new file location
 			$newFile = $this->currentDirectory . $result['newpage'];
+			$action = 'edit';
 		}
-		
-		#!# There is a lot of duplication around here - refactor out the creation of a new page
-		
-		# Get the template in use
-		$template = $this->templateMark . ($this->isBlogMode ? str_replace ('%title', ucfirst ($result['summary']), $this->newBlogEntryTemplate) . "\n\n<p class=\"signature\"><em>{$this->users[$this->user]['Forename']}</em></p>" : str_replace ('%title', $this->newPageTemplateDefaultTitle, $this->newPageTemplate));
-		
-		# Create the file
-		if (!application::createFileFromFullPath ($this->filestoreRoot . $newFile, $template, $addStamp = true)) {
-			$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new file in the filestore.', "The filename was {$this->filestoreRoot}{$newFile} .");
-			return $html;
-		}
-		
-		# Log the change
-		$html .= $this->logChange ("Created template " . ($this->isBlogMode ? 'blog posting' : 'page') . " {$newFile}");
 		
 		# Show confirmation, but ideally redirect the user directly
-		application::sendHeader (302, "{$this->editSiteUrl}{$newFile}?edit");
-		$html .= "<p class=\"success\">The new file was successfully created. You can now <a href=\"{$newFile}?edit\">edit the new " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a>.</p>";
+		$redirectTo = "{$newFile}?{$action}";
+		application::sendHeader (302, $this->editSiteUrl . $redirectTo);
+		$html .= "<p class=\"success\">You can now <a href=\"{$redirectTo}\">edit the new " . ($this->isBlogMode ? 'blog posting' : 'page') . "</a>.</p>";
+		
+		# Return the HTML
+		return $html;
+	}
+	
+	
+	# Helper function to require the creation of a section
+	private function requireSectionCreation ()
+	{
+		# Not required if the current directory exists
+		if ($this->currentDirectoryExists ()) {return false;}
+		
+		# Get the nearest section; e.g. a request for /foo/bar/baz.html when only /foo/ exists in this hierarchy would return "/foo/"
+		$nearestSection = $this->nearestPage ($this->currentDirectory, true);
+		
+		# Get the remaining components after the current directory, e.g. /foo/bar/baz.html would result in "bar"
+		$delimiter = '@';
+		$difference = preg_replace ($delimiter . '^' . addcslashes ($nearestSection, $delimiter) . $delimiter, '', $this->currentDirectory);
+		$differenceFolderComponents = explode ('/', $difference);
+		$suggestedFolderName = strip_tags ($differenceFolderComponents[0]);
+		
+		# Compile the HTML
+		$html = "<p class=\"warning\">You must <a href=\"{$nearestSection}?section=" . htmlspecialchars (urlencode ($suggestedFolderName)) . "\">create a section " . (count ($differenceFolderComponents) == 1 ? 'here' : 'higher up') . "</a> first, as there is no such section " . htmlspecialchars ($this->currentDirectory) . ' at present.</p>';
 		
 		# Return the HTML
 		return $html;
@@ -2455,7 +2535,7 @@ class pureContentEditor
 			$postings = $this->getCurrentPagesHere ($currentBlogRoot, $asTree = true, 'html');
 			$postings = array_diff ($postings, array ($currentBlogRoot . 'index.html'));
 			rsort ($postings);
-			$html .= ($postings ? $this->listCurrentResources ($postings, 'postings') : "\n<p>There are no blog postings in this area at present.</p>");
+			$html .= $this->listCurrentResources ($postings, 'postings');
 			
 		# Normal mode
 		} else {
@@ -2463,13 +2543,13 @@ class pureContentEditor
 			# List the current pages
 			$html .= "\n<h2>" . ($this->isBlogMode ? 'Blogs in this section' : 'Sub-sections (folders) in this section') . '</h2>';
 			$currentFolders = $this->getCurrentFoldersHere ();
-			$html .= ($currentFolders ? $this->listCurrentResources ($currentFolders, 'folders') : "\n<p>There are no " . ($this->isBlogMode ? 'blogs' : 'folders') . " in this area at present.</p>");
+			$html .= $this->listCurrentResources ($currentFolders, 'folders');
 			$html .= "\n<p>You may wish to <a href=\"?section\">create a new " . ($this->isBlogMode ? 'blog' : 'section (folder)') . '</a>' . ($currentFolders ? ' if there is not a relevant one already' : '') . '.</p>';
 			
 			# List the current pages
 			$html .= "\n<h2>" . ($this->isBlogMode ? 'Ancillary pages' : 'Pages') . ' in this section</h2>';
 			$currentPages = $this->getCurrentPagesHere ();
-			$html .= ($currentPages ? $this->listCurrentResources ($currentPages, 'pages') : "\n<p>There are no pages in this area at present.</p>");
+			$html .= $this->listCurrentResources ($currentPages, 'pages');
 			$html .= "\n<p>You may wish to <a href=\"?newPage\">create a new page</a>" . ($currentPages ? ' if there is not a relevant one already' : '') . '.</p>';
 		}
 		
@@ -2742,7 +2822,7 @@ class pureContentEditor
 		# Prevent the form display if there are no users
 		if (!$deletableUsers) {
 			$html .= $message = "\n" . '<p class="information">' . ($this->usersWithUnapprovedSubmissions ? 'There remain' : 'There are') . ' no users available for deletion.</p>';
-			$html .= ($this->usersWithUnapprovedSubmissions ? "<p class=\"information\">(Users having <a href=\"{$this->page}?review\">submissions awaiting approval</a> (which must be approved/deleted first) cannot be deleted.)</p>" : '');
+			$html .= ($this->usersWithUnapprovedSubmissions ? "<p class=\"warning\">(Users having <a href=\"{$this->page}?review\">submissions awaiting approval</a> (which must be approved/deleted first) cannot be deleted.)</p>" : '');
 			return $html;
 		}
 		
@@ -2756,7 +2836,7 @@ class pureContentEditor
 		
 		# Determine whether there are approvals outstanding
 		if ($this->usersWithUnapprovedSubmissions) {
-			$form->heading ('', "<p class=\"information\">Note: some users are not listed as they have <a href=\"{$this->page}?review\">submissions awaiting approval</a>, which must be approved/deleted first.</p>");
+			$form->heading ('', "<p class=\"warning\">Note: some users are not listed as they have <a href=\"{$this->page}?review\">submissions awaiting approval</a>, which must be approved/deleted first.</p>");
 		}
 		
 		# Widgets
@@ -3280,7 +3360,7 @@ class pureContentEditor
 	
 	
 	# Function to list the current user's permissions
-	private function permissionMine ()
+	private function myAreas ()
 	{
 		# Start the HTML
 		$html = '';
@@ -3819,7 +3899,7 @@ class pureContentEditor
 		# Reload the submissions database, first caching the submitting user
 		$submission = $this->submissions[$filename];
 		$fileLocation = $submission['directory'] . $submission['filename'];
-		$this->submissions = $this->submissions ($excludeTemplateFiles = true);
+		$this->submissions = $this->submissions ();
 		
 		# Regenerate the menu so that the menu links do not reference the now-deleted file
 		$this->menuHtml = $this->generateMenu ($this->page);
@@ -3850,6 +3930,9 @@ class pureContentEditor
 	# Function to approve a file (i.e. make live)
 	private function makeLive ($submittedFile, $contents, &$madeLiveOk = false, $directly = false, $respecifiedLocation = false, $mailUser = false, $extraMessage = false, $moreSubmissionsByThisUser = false)
 	{
+		# Start the HTML
+		$html = '';
+		
 		# Construct the file location
 		$newFileLiveLocation = ($directly ? $submittedFile : ($respecifiedLocation ? $respecifiedLocation . (substr ($respecifiedLocation, -1) == '/' ? 'index.html' : '') : $this->submissions[$submittedFile]['directory'] . $this->submissions[$submittedFile]['filename']));
 		$newFileLiveLocationFromRoot = $this->liveSiteRoot . $newFileLiveLocation;
@@ -3948,7 +4031,7 @@ class pureContentEditor
 		$introduction = 'The following ' . (count ($errors) == 1 ? 'problem was' : 'problems were') . ' encountered' . ($this->user ? " (by user {$this->user})" : '') . ':';
 		$message = "\nDear webserver administrator,\n\n{$introduction}\n\n" . '- ' . implode ("\n\n- ", $errors);
 		
-		# If there is provide information, add this
+		# If there is private information, add this
 		if ($privateInfo) {$message .= "\n\nAdditional diagnostic information:\n" . $privateInfo;}
 		
 		# Add the current page
@@ -4097,8 +4180,7 @@ class pureContentEditor
 	private function listSubmissions ($reload = false)
 	{
 		# Reload the list, excluding template files
-		#!# Set excludeTemplateFiles to false when they are created only in memory while editing
-		if ($reload) {$this->submissions = $this->submissions ($excludeTemplateFiles = true);}
+		if ($reload) {$this->submissions = $this->submissions ();}
 		
 		# If there are no files awaiting review, say so and finish
 		if (!$this->submissions) {
@@ -4149,14 +4231,10 @@ class pureContentEditor
 	
 	
 	# Function to get all submissions
-	private function submissions ($excludeTemplateFiles = false)
+	private function submissions ()
 	{
-		# Determine whether to exclude files the size of the template
-		$excludeFileTemplate = ($excludeTemplateFiles ? $this->newPageTemplate : false);
-		$excludeContentsRegexp = ($excludeTemplateFiles ? '^' . $this->templateMark : false);
-		
 		# Get the file listing, excluding files matching the template
-		$files = directories::flattenedFileListing ($this->filestoreRoot, array (), $includeRoot = false, $excludeFileTemplate, $excludeContentsRegexp);
+		$files = directories::flattenedFileListing ($this->filestoreRoot, array (), $includeRoot = false);
 		
 		# Filter and organise the file listing
 		$files = $this->submissionsFiltered ($files);
@@ -4253,74 +4331,8 @@ class pureContentEditor
 			$html .= $this->reportErrors ('Problems were encountered when attempting to delete empty folders in the filestore.', "The list of directories which did not delete is:\n" . implode ("\n", $problemsFound), true);
 		}
 		
-		# Remove old template files
-		if ($problemsFound = $this->removeTemplateFiles ()) {
-			$html .= $this->reportErrors ('Problems were encountered when attempting to remove old template files in the filestore.', "The list of files which did not delete is:\n" . implode ("\n", $problemsFound), true);
-		}
-		
 		# Return the HTML
 		return $html;
-	}
-	
-	
-	# Function to remove old template files
-	#!# This infrastructure should be removed entirely when the template can be created in memory instead of physically - currently users cannot be deleted for 10 hours after creating an orphaned template file
-	private function removeTemplateFiles ($forceUsername = false)
-	{
-		# Assume no problems to start with
-		$problemsFound = false;
-		
-		# End if no submissions
-		if (!$this->submissions) {return $problemsFound;}
-		
-		# Determine the filesize of the template
-		$templateSize = strlen ($this->templateMark . str_replace ('%title', $this->newPageTemplateDefaultTitle, $this->newPageTemplate));
-		
-		# Find all the files whose size matches the size of the template
-		$templateFiles = array ();
-		foreach ($this->submissions as $file => $attributes) {
-			if ($attributes['size'] != $templateSize) {continue;}	// Skip for performance
-			$contents = file_get_contents ($this->filestoreRoot . $file);
-			$delimiter = '@';
-			if (preg_match ($delimiter . '^' . addcslashes ($this->templateMark, $delimiter) . $delimiter, $contents)) {
-				$templateFiles[$file] = $attributes;
-			}
-		}
-		
-		# Set to clear after a certain time
-		$hours = 10;
-		$clearanceTime = 60 * 60 * $hours;
-		
-		# Loop through and determine which template files should be removed
-		$clearFiles = array ();
-		$now = time ();
-		foreach ($templateFiles as $file => $attributes) {
-			
-			# Clear those whose username matches if being forced
-			if ($forceUsername) {
-				if ($attributes['username'] == $forceUsername) {
-					$clearFiles[$file] = $attributes;
-					continue;
-				}
-			}
-			
-			# Clear those after a certain time
-			$unixtime = $this->convertTimestamp ($attributes['timestamp'], true, $asUnixtime = true);
-			if ($unixtime < ($now - $clearanceTime)) {
-				$clearFiles[$file] = $attributes;
-			}
-		}
-		
-		# Delete the files
-		foreach ($clearFiles as $file => $attributes) {
-			$fileToDelete = $this->filestoreRoot . $file;
-			if (!unlink ($fileToDelete)) {
-				$problemsFound[] = $file;
-			}
-		}
-		
-		# Return lack of problems
-		return $problemsFound;
 	}
 	
 	
