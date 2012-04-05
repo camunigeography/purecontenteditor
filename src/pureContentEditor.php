@@ -30,7 +30,6 @@
 #!# Checking writability needs to be done on the proposed file, NOT at top level
 
 
-# Specialised gui for menu, title and header files (rather than using 'list pages' or entering the URL directly)
 
 
 ### Potential future development suggestions:
@@ -115,6 +114,11 @@ class pureContentEditor
 		'pureContentSubmenuFile' => '.menu.html',	// pureContent submenu file name
 		'pureContentSidebarFile' => 'sidebar.html',	// pureContent sidebar file name
 		'pureContentMenuFile' => '/sitetech/menu.html',	// pureContent menu file name
+		'enableHeaderImages' => false,			// Whether to enable the headers functionality
+		'pureContentHeaderImageStore' => '/images/headers/',	// Section image header store
+		'pureContentHeaderImageFilename' => 'header.jpg',	// Section image header filename
+		'pureContentHeaderImageWidth' => false,		// Section image header width, or false for no checking
+		'pureContentHeaderImageHeight' => false,	// Section image header height, or false for no checking
 		'reviewPagesOpenNewWindow' => false,	// Whether pages for review should open in a new window or not
 		'maximumFileAndFolderNameLength' => 25,	// Maximum number of characters for new files and folders
 		'contentNegotiation' => false,			// Whether to switch on content-negotiation semantics when dealing with filenames
@@ -157,7 +161,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.1';
+	private $version = '1.8.2';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -369,7 +373,7 @@ class pureContentEditor
 			$setupErrors[] = 'The server did not supply a username, so the editing facility is unavailable.';
 		}
 		
-		# Ensure the filestoreRoot and liveSiteRoot are not slash-terminated
+		# Ensure the filestoreRoot liveSiteRoot are not slash-terminated
 		$this->filestoreRoot = ((substr ($this->filestoreRoot, -1) == '/') ? substr ($this->filestoreRoot, 0, -1) : $this->filestoreRoot);
 		$this->liveSiteRoot = ((substr ($this->liveSiteRoot, -1) == '/') ? substr ($this->liveSiteRoot, 0, -1) : $this->liveSiteRoot);
 		
@@ -416,13 +420,26 @@ class pureContentEditor
 			}
 		}
 		
+		# Ensure the header image store exists and is writable before continuing, if the location has been supplied
+		if ($this->enableHeaderImages && $this->pureContentHeaderImageStore) {
+			if (!is_dir ($this->liveSiteRoot . $this->pureContentHeaderImageStore)) {
+				if (!@mkdir ($this->liveSiteRoot . $this->pureContentHeaderImageStore, 0775, $recursive = true)) {
+					$errorsHtml .= $this->reportErrors ('There was a problem creating the main header image directory.', "The pureContentHeaderImageStore, which cannot be created, specified in the settings, is: {$this->pureContentHeaderImageStore}/");
+					return $errorsHtml;
+				}
+			}
+			if (!application::directoryIsWritable ($this->liveSiteRoot . $this->pureContentHeaderImageStore)) {
+				$setupErrors[] = 'It is not currently possible to archive files to the header image directory. The administrator needs to ensure the directory exists and fix the permissions first.';
+			}
+		}
+		
 		# Define an array for an additional message (used in several places);
 		$this->additionalMessageWidget = array (
 			'name'			=> 'message',
-			'title'					=> 'Any additional message',
-			'required'				=> false,
-			'cols'				=> 40,
-			'rows'					=> 3,
+			'title'			=> 'Any additional message',
+			'required'		=> false,
+			'cols'			=> 40,
+			'rows'			=> 3,
 		);
 		
 		# Define the user and permissions database locations
@@ -1202,11 +1219,20 @@ class pureContentEditor
 			
 			'sidebar' => array (
 				'title' => 'Sidebar',
-				'tooltip' => 'Edit or create a sidebar item for pages in this section',
+				'tooltip' => 'Edit or create a sidebar item visible on all pages in this section',
 				'url' => $this->currentDirectory . $this->pureContentSidebarFile . '?sidebar',
 				'administratorsOnly' => false,
 				'grouping' => 'Navigation',
 				'check' => $this->userHasPageCreationRights ($this->page),
+			),
+			
+			'headerimage' => array (
+				'title' => 'Header image',
+				'tooltip' => 'Change or create a header image visible on all pages in this section',
+				'url' => $this->currentDirectory . '?headerimage',
+				'administratorsOnly' => false,
+				'grouping' => 'Navigation',
+				'check' => $this->enableHeaderImages && $this->userHasPageCreationRights ($this->page),
 			),
 			
 			'myAreas' => array (
@@ -2070,6 +2096,174 @@ class pureContentEditor
 			$html .= ($this->wordwrapViewedSubmittedHtml ? wordwrap ($content) : $content);
 			$html .= "\n</pre>";
 			$html .= "\n<hr />";
+		}
+		
+		# Return the HTML
+		return $html;
+	}
+	
+	
+	# Function to change/create header images
+	private function headerimage ()
+	{
+		# Start the HTML
+		$html  = '';
+		
+		# Ensure the directory exists
+		$imageStore = $this->liveSiteRoot . $this->pureContentHeaderImageStore;
+		
+		# Determine the supported file type
+		$extension = strtolower (pathinfo ($this->pureContentHeaderImageFilename, PATHINFO_EXTENSION));
+		
+		# Get a list of all the current headers, ordered by most recent first
+		$currentImages = directories::listFiles ($imageStore, $extension, $directoryIsFromRoot = true);
+		$currentImages = application::natsortField ($currentImages, 'time');
+		$currentImages = array_reverse ($currentImages, true);
+		
+		# Determine whether a specific size is required
+		$specificSizeRequired = ($this->pureContentHeaderImageWidth && ctype_digit ((string) $this->pureContentHeaderImageWidth) && $this->pureContentHeaderImageHeight && ctype_digit ((string) $this->pureContentHeaderImageHeight));
+		
+		# Filter for the correct size if required
+		if ($specificSizeRequired) {
+			foreach ($currentImages as $file => $attributes) {
+				list ($width, $height, $type, $imageSize) = getimagesize ($imageStore . $file);		// NB is_readable() has already been done by directories.php
+				if (($width != $this->pureContentHeaderImageWidth) || ($height != $this->pureContentHeaderImageHeight)) {
+					unset ($currentImages[$file]);
+				}
+			}
+		}
+		
+		# If an image has been selected, put it in place
+		if ($this->attribute) {
+			$delimiter = '@';
+			if (preg_match ($delimiter . '\.' . addcslashes ($extension, $delimiter) . '$' . $delimiter, $this->attribute)) {
+				if (array_key_exists ($this->attribute, $currentImages)) {	// Avoids any hack attempts
+					
+					# Move the image to the right position
+					$currentLocation = $this->attribute;
+					$newLocation = $this->currentDirectory . $this->pureContentHeaderImageFilename;
+					if (!copy ($imageStore . $currentLocation, $this->liveSiteRoot . $newLocation)) {
+						$errorsHtml  = $this->reportErrors ('There was a problem copying the header file to the section.', "The header image \"{$this->attribute}\" could not be copied to {$this->currentDirectory} .");
+						return $errorsHtml;
+					}
+					
+					# Confirm success
+					$link = $this->liveSiteUrl . $this->chopDirectoryIndex ($this->page);
+					$html  = "\n<p><img src=\"/images/general/tick.gif\" alt=\"Tick\" border=\"0\"> The new header image has been added to the live site.</p>";
+					$html .= "\n<p>View the <a target=\"_blank\" href=\"" . $link . "\">front page of this section, showing the new header</a>, in a new window.</p>";
+					$html .= "\n<p><a target=\"_blank\" href=\"{$link}\"><img src=\"{$newLocation}\" alt=\"Header image\" border=\"0\" /></a></p>";
+					$html .= "\n<br />";
+					$html .= "\n<p><a href=\"{$this->currentDirectory}?headerimage\">Replace with a different image?</a></p>";
+					
+					# Log the change
+					$html .= $this->logChange ("header image {$this->attribute} used as header at {$this->currentDirectory}.");
+					
+					# Return the HTML
+					return $html;
+				}
+			}
+		}
+		
+		# Show an image upload form
+		$imageUploadForm = $this->imageUploadForm ($imageStore, $extension, $specificSizeRequired, array_keys ($currentImages));
+		$html .= "\n<div class=\"graybox\">" . $imageUploadForm . "\n</div>";
+		
+		# End if no images
+		if (!$currentImages) {
+			$html .= "\n<p>There are no current images.</p>";
+			return $html;
+		}
+		
+		# Create a gallery of all images
+		$totalImages = count ($currentImages);
+		$html .= "\n<p>There " . ($totalImages == 1 ? 'is currently one image' : "are currently {$totalImages} images") . ":</p>";
+		$html .= "<hr />";
+		foreach ($currentImages as $file => $attributes) {
+			$html .= "<br />";
+			$html .= "\n<h3><strong>" . htmlspecialchars ($attributes['name']) . "</strong> [<a href=\"{$this->currentDirectory}?headerimage=" . htmlspecialchars (urlencode ($file)) . '">Use this one</a>]:</h3>';
+			$html .= "\n<p><a href=\"{$this->currentDirectory}?headerimage=" . htmlspecialchars (urlencode ($file)) . "\"><img src=\"{$this->pureContentHeaderImageStore}" . htmlspecialchars ($file) . "\" alt=\"Header image\" border=\"0\" /></a></p>";
+		}
+		
+		# Return the HTML
+		return $html;
+	}
+	
+	
+	# Function to create an image upload form
+	private function imageUploadForm ($imageStore, $extension, $specificSizeRequired, $currentImages)
+	{
+		# Start the HTML
+		$html = '';
+		
+		# If the 'true' attribute is set then show confirmation
+		if ($this->attribute == 'true') {
+			$html  = "\n<p><img src=\"/images/general/tick.gif\" alt=\"Tick\" border=\"0\"> The image has been successfully uploaded and is shown below. [<a href=\"{$this->currentDirectory}?headerimage\">Add another</a>?]</p>";
+			$html .= "\n<p><strong>Select it below to confirm that you wish to use it for this section.</strong></p>";
+			return $html;
+		}
+		
+		# Describe the restrictions
+		$restrictions = "The image <strong>must</strong> have a <strong>.{$extension} extension</strong>" . ($specificSizeRequired ? " and must be exactly <strong>{$this->pureContentHeaderImageWidth}px</strong> by <strong>{$this->pureContentHeaderImageHeight}px</strong>" : '') . '.';
+		
+		# Create an upload form
+		require_once ('ultimateForm.php');
+		$form = new form (array (
+			'formCompleteText' => false,
+			'div' => false,
+			'displayRestrictions' => false,
+			'requiredFieldIndicator' => false,
+			'displayColons' => true,
+		));
+		$form->heading (2, 'Add an image');
+		$form->heading ('p', $restrictions);
+		$form->upload (array (
+			'name'				=> 'image',
+			'title'				=> 'Select the image',
+			'directory'			=> $imageStore,
+			'allowedExtensions'	=> array ($extension),
+			'required'			=> true,
+			'forcedFileName'	=> $this->user,		// To prevent clashes when uploading
+			'flatten'		=> true,
+			'autofocus'		=> true,
+		));
+		$form->input (array (
+			'name'			=> 'name',
+			'title'			=> 'Give it clear description',
+			'required'		=> true,
+			'maxlength'		=> $this->maximumFileAndFolderNameLength,
+			'size'			=> 50,
+			'maxlength'		=> 40,
+			'regexp'		=> "^([a-zA-Z0-9 -]{1,40})$",
+			'placeholder'	=> 'Characters: a-z A-Z 0-9 spaces and hyphens only',
+		));
+		if ($result = $form->process ($html)) {
+			
+			# Prevent clashing filenames
+			$uploadedFilename = $this->user . '.' . $extension;
+			$requestedFilename = $result['name'] . '.' . $extension;
+			if (in_array ($requestedFilename, $currentImages)) {
+				unlink ($imageStore . $uploadedFilename);
+				$html = "<p class=\"warning\">Sorry, an image with that name already exists, so the one you selected has not been added. Please <a href=\"{$this->page}?headerimage\">try again</a>.</p>";
+				return $html;
+			}
+			
+			# Check the size if required
+			if ($specificSizeRequired) {
+				list ($width, $height, $type, $imageSize) = getimagesize ($imageStore . $uploadedFilename);
+				if (($width != $this->pureContentHeaderImageWidth) || ($height != $this->pureContentHeaderImageHeight)) {
+					unlink ($imageStore . $uploadedFilename);
+					$html = "<p class=\"warning\">The image was the wrong size, so the one you selected has not been added. Please <a href=\"{$this->page}?headerimage\">try again</a>.</p>";
+					return $html;
+				}
+			}
+			
+			# Move the file
+			rename ($imageStore . $uploadedFilename, $imageStore . $requestedFilename);
+			
+			# Refresh the page, which will show the recently-uploaded image at the top
+			$redirectTo = "{$this->currentDirectory}?headerimage=true";
+			application::sendHeader (302, $this->editSiteUrl . $redirectTo);
+			return false;
 		}
 		
 		# Return the HTML
