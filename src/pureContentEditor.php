@@ -135,7 +135,7 @@ class pureContentEditor
 		'archiveReplacedLiveFiles' => true,		// Whether to backup files on the live site which have been replaced (either true [put in same location], false [no archiving] or a path
 		'protectEmailAddresses' => true,	// Whether to obfuscate e-mail addresses
 		'externalLinksTarget'	=> '_blank',	// The window target name which will be instanted for external links (as made within the editing system) or false
-		'imageAlignmentByClass'	=> true,		// Replace align="foo" with class="foo" for images
+		'imageAlignmentByClass'	=> false,		// Replace align="foo" with class="foo" for images
 		'imageConvertAbsolute'	=> false,		// Whether to pre-process the HTML to make images have absolute URLs
 		'logout'	=> false,	// False if there is no logout available from the authentication agent or the location of the page
 		'disableDateLimitation' => false,	// Whether to disable the date limitation functionality
@@ -161,7 +161,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.2';
+	private $version = '1.8.3';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -706,12 +706,11 @@ class pureContentEditor
 			);
 		}
 		
-		# Replacement of image class with a similarly-named align attribute (this is then reversed afterwards - this is so that the DHTML editor picks up the alignment correctly
-		if ($this->imageAlignmentByClass) {
-			$replacements += array (
-				'<img([^>]*) class="(left|center|centre|right)"([^>]*)>' => '<img$1 align="$2"$3>',
-			);
-		}
+		# Replacement of legacy image class with a similarly-named align attribute (if imageAlignmentByClass is enabled, then this is then reversed afterwards - this is so that the DHTML editor picks up the alignment correctly
+		$replacements += array (
+			'<img([^>]*) class="(left|center|right)"([^>]*)>' => '<img$1 align="$2"$3>',
+			'<img([^>]*) class="(centre)"([^>]*)>' => '<img$1 align="center"$3>',
+		);
 		
 		# Perform the replacements
 		$delimiter = '@';	// Must not be in the strings above
@@ -4411,7 +4410,7 @@ class pureContentEditor
 		# Get the address
 		$attributes = $this->users[$user];
 		
-		# Construct the string, surrounding it with the name if on a non-Windows platform
+		# Construct the string, surrounding it with the name if not on a non-Windows platform
 		$string = $attributes['E-mail'];
 		if ((PHP_OS != 'WINNT') && $this->nameInEmail) {
 			$string = "{$attributes['Forename']} {$attributes['Surname']} <{$string}>";
