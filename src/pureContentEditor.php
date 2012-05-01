@@ -161,7 +161,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.3';
+	private $version = '1.8.4';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -954,7 +954,7 @@ class pureContentEditor
 	
 	
 	# Function to determine if the user has page creation rights
-	private function userHasPageCreationRights ($page)
+	private function userHasPageCreationRights ($page, $ignoreRootCheck = false)
 	{
 		# Obtain the user's rights
 		$rights = $this->determineRights ($page);
@@ -963,7 +963,7 @@ class pureContentEditor
 		$directory = $this->directoryOfPage ($page);
 		
 		# Determine whether page creation is being disallowed at this location due to root level disallowing
-		$rootPageCreationRestrictionApplies = ($directory == '/' && !$this->allowPageCreationAtRootLevel);
+		$rootPageCreationRestrictionApplies = ($directory == '/' && !$this->allowPageCreationAtRootLevel && !$ignoreRootCheck);
 		
 		# Look up blog mode for this area
 		list ($blogMode, $isBlogTreeRoot) = $this->blogMode ($directory);
@@ -1231,7 +1231,7 @@ class pureContentEditor
 				'url' => $this->currentDirectory . '?headerimage',
 				'administratorsOnly' => false,
 				'grouping' => 'Navigation',
-				'check' => $this->enableHeaderImages && $this->userHasPageCreationRights ($this->page),
+				'check' => $this->enableHeaderImages && $this->userHasPageCreationRights ($this->page, $ignoreRootCheck = true),
 			),
 			
 			'myAreas' => array (
