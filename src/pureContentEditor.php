@@ -161,7 +161,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.4';
+	private $version = '1.8.5';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1604,8 +1604,14 @@ class pureContentEditor
 		if ($this->pageIs404 || (!$this->livePage && !$this->stagingPage)) {
 			application::sendHeader (404);
 			$html  = "\n" . '<h1>Page not found</h1>';
-			#!# If $this->page is "/foo/bar" then this link will do nothing
-			$html .= "\n" . '<p>There is no page <em>' . htmlspecialchars ($this->page) . '</em>. Do you want to <a href="' . htmlspecialchars ($this->page) . '?edit">create a new page</a> with that name here?</p>';
+			if ($this->page == $this->currentDirectory . $this->directoryIndex) {
+				#!# Not clear how this line and its container differ from the !$this->directoryContainsIndex () check a few lines down
+				$html .= "\n" . '<p>There is no page <em>' . htmlspecialchars ($this->page) . '</em>. Do you want to <a href="' . htmlspecialchars ($this->page) . '?edit">create the front page of this section</a>, since it is currently empty?</p>';
+			} else {
+				#!# If $this->page is "/foo/bar" then this link will do nothing
+				$html .= "\n" . '<p>There is no page <em>' . htmlspecialchars ($this->page) . '</em>. Do you want to <a href="' . htmlspecialchars ($this->page) . '?edit">create a new page</a> with that name here?</p>';
+			}
+			
 			return $html;
 		}
 		
