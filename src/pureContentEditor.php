@@ -161,7 +161,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.5';
+	private $version = '1.8.6';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -2032,6 +2032,11 @@ class pureContentEditor
 				'fileDelete' => true,
 			);
 			
+			# If at the top level, deny file addition to force files to be within the structure rather than dumped in the root area
+			if ($location == '/') {
+				$cKFinderAccessControl[$location]['fileUpload'] = false;
+			}
+			
 			# If tree rights, add the child privileges
 			if ($treeRights) {
 				if ($childFolders = directories::listContainedDirectories ($this->liveSiteRoot . $location)) {
@@ -2513,7 +2518,7 @@ class pureContentEditor
 	
 	
 	# Function to show a current folder listing
-	private function listCurrentResources ($currentResources, $type = 'folders')
+	private function listCurrentResources ($currentResources, $type = 'folders', $actionPersistence = false)
 	{
 		# Determine a message for there being none
 		switch ($type) {
@@ -2546,7 +2551,7 @@ class pureContentEditor
 			
 			# Add the item, correctly formatted
 			#!# Ideally get the title, but this means working out which file (live or staging) to open
-			$currentResourcesLinked[] = "<a href=\"{$resource}\">{$resource}</a>";
+			$currentResourcesLinked[] = "<a href=\"{$resource}" . ($actionPersistence ? "?{$this->action}" : '') . "\">{$resource}</a>";
 		}
 		
 		# End if none
@@ -2800,7 +2805,7 @@ class pureContentEditor
 		$html = '';
 		
 		# Show the current location
-		$html .= "\n<p class=\"information\">You are currently in the location: {$this->currentDirectory}</p>";
+		$html .= "\n<p class=\"information\">You are currently in the location: <strong>{$this->currentDirectory}</strong></p>";
 		
 		# Switch between normal and blog mode
 		if ($this->blogMode && !$this->isBlogTreeRoot) {
@@ -2810,7 +2815,7 @@ class pureContentEditor
 			$postings = $this->getCurrentPagesHere ($currentBlogRoot, $asTree = true, 'html');
 			$postings = array_diff ($postings, array ($currentBlogRoot . 'index.html'));
 			rsort ($postings);
-			$html .= $this->listCurrentResources ($postings, 'postings');
+			$html .= $this->listCurrentResources ($postings, 'postings', true);
 			
 		# Normal mode
 		} else {
@@ -2818,7 +2823,7 @@ class pureContentEditor
 			# List the current pages
 			$html .= "\n<h2>" . ($this->blogMode ? 'Blogs in this section' : 'Sub-sections (folders) in this section') . '</h2>';
 			$currentFolders = $this->getCurrentFoldersHere ();
-			$html .= $this->listCurrentResources ($currentFolders, 'folders');
+			$html .= $this->listCurrentResources ($currentFolders, 'folders', true);
 			$html .= "\n<p>You may wish to <a href=\"?section\">create a new " . ($this->blogMode ? 'blog' : 'section (folder)') . '</a>' . ($currentFolders ? ' if there is not a relevant one already' : '') . '.</p>';
 			
 			# List the current pages
