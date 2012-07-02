@@ -113,6 +113,8 @@ class pureContentEditor
 		'pureContentTitleFile' => '.title.txt',	// pureContent title file name
 		'pureContentSubmenuFile' => '.menu.html',	// pureContent submenu file name
 		'pureContentSidebarFile' => 'sidebar.html',	// pureContent sidebar file name
+		'pureContentHeadermenuFile' => 'headermenu.html',	// pureContent headermenu file name
+		'pureContentFootermenuFile' => 'footermenu.html',	// pureContent footermenu file name
 		'pureContentMenuFile' => '/sitetech/menu.html',	// pureContent menu file name
 		'enableHeaderImages' => false,			// Whether to enable the headers functionality
 		'pureContentHeaderImageStore' => '/images/headers/',	// Section image header store
@@ -161,7 +163,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.6';
+	private $version = '1.8.7';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1644,9 +1646,18 @@ class pureContentEditor
 		# Import the globals environment into local scope
 		extract ($GLOBALS);
 		
+		# Determine if there is a pureContent header/footer file to show
+		#!# Local includes in these files are not supported at present
+		$headermenuFile = $this->liveSiteRoot . $this->currentDirectory . $this->pureContentHeadermenuFile;
+		$headermenu = (is_readable ($headermenuFile) ? $headermenuFile : false);
+		$footermenuFile = $this->liveSiteRoot . $this->currentDirectory . $this->pureContentFootermenuFile;
+		$footermenu = (is_readable ($footermenuFile) ? $footermenuFile : false);
+		
 		# Capture the contents
 		ob_start ();
+		if ($headermenu) {include ($headermenu);}
 		include ($this->editableFile);
+		if ($footermenu) {include ($footermenu);}
 		$pageContents = ob_get_clean ();
 		
 		# Show the contents
