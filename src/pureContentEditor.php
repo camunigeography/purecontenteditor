@@ -156,6 +156,7 @@ class pureContentEditor
 		'makeLiveDefaultChecked' => true,	// Whether the 'make live by default' option should be checked by default
 		'leaveLink'	=> false,		// Whether to add a link for 'leave editing mode'
 		'nofixTag'	=> '<!-- nofix -->',	// Special marker which indicates that the HTML should not be cleaned (or false to disable)
+		'removeComments' => true,	// Whether the richtext editor should remove comments (NB disabling this will leave comment tags relating to WordHTML behind)
 		'nameInEmail' => true,	// Whether e-mail should be formatted as Name <address@domain> or just address@domain
 	);
 	
@@ -163,7 +164,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.7';
+	private $version = '1.8.8';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1224,7 +1225,7 @@ class pureContentEditor
 				'url' => $this->currentDirectory . $this->pureContentSidebarFile . '?sidebar',
 				'administratorsOnly' => false,
 				'grouping' => 'Navigation',
-				'check' => $this->userHasPageCreationRights ($this->page),
+				'check' => $this->userHasPageCreationRights ($this->page, $ignoreRootCheck = true),
 			),
 			
 			'headerimage' => array (
@@ -1882,6 +1883,7 @@ class pureContentEditor
 						'imageAlignmentByClass'	=> $this->imageAlignmentByClass,	// Replace align="foo" with class="foo" for images
 						'replacements'			=> $replacements,
 						'nofixTag'				=> $this->nofixTag,
+						'removeComments'		=> $this->removeComments,
 						'disallow'				=> ($this->allImagesRequireAltText ? array ('<img ([^>]*)alt=""([^>]*)>' => 'All images must have alternative text supplied, for accessibility reasons. Please correct this by right-clicking on the image, selecting \'Image Properties\' and entering a description of the image in the field marked \'Alternative Text\'.') : false),	// Images without alternative text
 					));
 				}
