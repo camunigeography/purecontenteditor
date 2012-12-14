@@ -156,6 +156,7 @@ class pureContentEditor
 		'makeLiveDefaultChecked' => true,	// Whether the 'make live by default' option should be checked by default
 		'leaveLink'	=> false,		// Whether to add a link for 'leave editing mode'
 		'nofixTag'	=> '<!-- nofix -->',	// Special marker which indicates that the HTML should not be cleaned (or false to disable)
+		'allowCurlyQuotes' => false,	// Whether to allow curly quotes (e.g. from MS Word)
 		'removeComments' => true,	// Whether the richtext editor should remove comments (NB disabling this will leave comment tags relating to WordHTML behind)
 		'nameInEmail' => true,	// Whether e-mail should be formatted as Name <address@domain> or just address@domain
 	);
@@ -164,7 +165,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.8';
+	private $version = '1.8.9';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1877,6 +1878,7 @@ class pureContentEditor
 							### DisableThumbnailSelection, StartupPath, StartupFolderExpanded
 							//'CKFinderStartupPath'	=> false,		// CKFinder startup path, or false to disable
 						),
+						'allowCurlyQuotes'		=> $this->allowCurlyQuotes,
 						'protectEmailAddresses' => $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
 						'externalLinksTarget'	=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
 						'directoryIndex' 		=> $this->directoryIndex,			// Default directory index name
@@ -1929,6 +1931,8 @@ class pureContentEditor
 			$message = "A page has been directly made live at:\n{$this->liveSiteUrl}" . $this->chopDirectoryIndex ($this->page);
 			$subjectSuffix = 'page directly made live';
 		} else {
+			
+			#!# Ideally there needs to be a different error message here if the problem was that the file was actually just empty
 			
 			# Create the file by supplying the complete file location and filename
 			if (!$filename = application::createFileFromFullPath ($this->filestoreRoot . $this->page, $content, $addStamp = true)) {
