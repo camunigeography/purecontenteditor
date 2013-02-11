@@ -165,7 +165,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.9';
+	private $version = '1.8.10';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -873,6 +873,13 @@ class pureContentEditor
 	{
 		# Get the data and return it
 		$csvPermissions = csv::getData ($this->permissionsDatabase);
+		
+		# Ensure that all fields are present in the CSV data
+		foreach ($csvPermissions as $username => $attributes) {
+			foreach ($this->permissionsDatabaseFields as $field) {
+				$csvPermissions[$username][$field] = (isSet ($attributes[$field]) ? trim ($attributes[$field]) : '');
+			}
+		}
 		
 		# Get the lookup data
 		$lookupPermissions = array ();
