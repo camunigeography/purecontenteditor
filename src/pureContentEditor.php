@@ -165,7 +165,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.10';
+	private $version = '1.8.11';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1942,7 +1942,7 @@ class pureContentEditor
 			#!# Ideally there needs to be a different error message here if the problem was that the file was actually just empty
 			
 			# Create the file by supplying the complete file location and filename
-			if (!$filename = application::createFileFromFullPath ($this->filestoreRoot . $this->page, $content, $addStamp = true)) {
+			if (!$filename = application::createFileFromFullPath ($this->filestoreRoot . $this->page, $content, $addStamp = true, $this->user)) {
 				$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new file in the filestore.', "This new file would have been at $this->page on the live site.");
 				return $html;
 			} else {
@@ -2413,7 +2413,7 @@ class pureContentEditor
 		
 		# Create the title file
 		$titleFileLocation = $this->filestoreRoot . $this->currentDirectory . $new . '/' . $this->pureContentTitleFile;
-		if (!application::createFileFromFullPath ($titleFileLocation, $result['title'], $addStamp = true)) {
+		if (!application::createFileFromFullPath ($titleFileLocation, $result['title'], $addStamp = true, $this->user)) {
 			$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the title file in the filestore; the new index page has also not been created.');
 			return $html;
 		}
@@ -2428,7 +2428,7 @@ class pureContentEditor
 		
 		# Create the front page
 		$frontPageLocation = $this->filestoreRoot . $this->currentDirectory . $new . '/' . $this->directoryIndex;
-		if (!application::createFileFromFullPath ($frontPageLocation, $template, $addStamp = true)) {
+		if (!application::createFileFromFullPath ($frontPageLocation, $template, $addStamp = true, $this->user)) {
 			$html .= $this->reportErrors ('Unfortunately, the operation failed - there was a problem creating the new directory index in the filestore.');
 			return $html;
 		}
@@ -4266,7 +4266,7 @@ class pureContentEditor
 		}
 		
 		# Install the new file on the live site
-		if (!$installNewFileResult = application::createFileFromFullPath ($newFileLiveLocationFromRoot, $contents, $addStamp = false)) {
+		if (!$installNewFileResult = application::createFileFromFullPath ($newFileLiveLocationFromRoot, $contents, $addStamp = false, $this->user)) {
 			$html .= $this->reportErrors ('There was a problem installing the approved file on the live site.', "This new file would have been at $newFileLiveLocation on the live site.");
 			$madeLiveOk = false;
 			return $html;
