@@ -165,7 +165,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.11';
+	private $version = '1.8.12';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -2191,6 +2191,9 @@ class pureContentEditor
 					
 					# Log the change
 					$html .= $this->logChange ("header image {$this->attribute} used as header at {$this->currentDirectory}.");
+					
+					# Refresh the page so that the new header is visibly shown
+					application::sendHeader (302, $this->editSiteUrl . $this->currentDirectory);
 					
 					# Return the HTML
 					return $html;
