@@ -1,6 +1,5 @@
 <?php
 
-
 /**
  * A class to create an editing facility on top of a pureContent-enabled site
  * 
@@ -165,7 +164,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.12';
+	private $version = '1.8.13';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -3582,6 +3581,7 @@ class pureContentEditor
 			'default'	=> $permission,
 			'required'	=> true,
 			'editable'	=> false,
+			'entities'	=> false,
 		));
 		$selfApprovalText = 'User can make pages live directly';
 		$form->checkboxes (array (
