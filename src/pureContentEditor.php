@@ -5,13 +5,13 @@
  * 
  * @package pureContentEditor
  * @license	http://opensource.org/licenses/gpl-license.php GNU Public License
- * @author	{@link http://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-12
+ * @author	{@link http://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-14
  * @version See $version below
  * 
  * REQUIREMENTS:
  * - PHP should ideally have the Tidy extension compiled/loaded
- * - Uses the FCKeditor DHTML component - www.fckeditor.net - to provide the richtext field; browser compatibility subject to FCKeditor requirements
- * - Requires libraries application.php, csv.php, directories.php, pureContent.php and ultimateForm.php, all available from http://download.geog.cam.ac.uk/
+ * - Requires libraries application.php, csv.php, directories.php, pureContent.php and ultimateForm.php, all available from http://download.geog.cam.ac.uk/projects/
+ * - Uses the CKEditor (open source) and CKFinder (requires license purchase) DHTML components - http://ckeditor.com/ - to provide the richtext field
  * - Assumes that the server will supply a username - e.g. using AuthType or the University of Cambridge's Raven service
  * - Requires mod_rewrite enabled in Apache
  */
@@ -36,7 +36,6 @@
 #R# Implement a better algorithm for typeOfFile ()
 #R# Implement the notion of a currently active permission which is definitive and which can be looked up against
 # Groups facility
-# <table class="lines"> - has to wait for FCKeditor to support this: see http://dev.fckeditor.net/ticket/825
 # Automatic deletion of permissions when folders don't exist, if a setting is turned on for this (NB needs to distinguish between not present and no permission - may not be possible)
 # More extensive menu editing system for the switch in edit ()
 # Provide a validation system (perhaps using Tidy if it is not already)? - See: http://thraxil.org/users/anders/posts/2005/09/20/Validation-meet-Unit-Testing-Unit-Testing-meet-Validation/
@@ -44,12 +43,10 @@
 # Extension to deal with deleting/moving files or even whole folders? - would create major difficulties with integration with redirects etc, however
 # Tighten up matching of ' src=' (currently will match that string outside an img tag)
 # Allow browsing of empty folders - should suggest creating a file
-# Move as many changes as possible made within /_fckeditor into the PHP constructor (as passed through ultimateForm.php)
 # Add use of application::getTitleFromFileContents in convertPermission () to get the contents for files
 # Find some way to enable browsing of /foo/bar/[no index.html] where that is a new directory that does not exist on the live site - maybe a mod_rewrite change
 # More control over naming - moving regexp into the settings but disallow _ at the start
 # Ability to add a permission directly when adding a user rather than using two stages (and hence two e-mails)
-# BUG: _fckeditor being appended to images/links in some cases
 # Moderation should cc: other administrators (not yourself though) when a page is approved
 # Make /page.html rights the default when on a section page rather than an index page
 # Enable explicit creation of .title.txt files
@@ -93,15 +90,15 @@ class pureContentEditor
 		'userDatabase' => '/.users.csv',		// User database
 		'permissionsDatabase' => '/.permissions.csv',	// Permissions database
 		'changelog' => '/.changelog.csv',		// Changelog
-		'richtextEditorWidth' => '100%',		// Richtext editor width in pixels e.g. 400 or percent e.g. '80%'
-		'richtextEditorHeight' => '400px',		// Richtext editor height in pixels e.g. 400 or percent e.g. '80%'
 		'textareaEditorWidth' => '90',		// Textarea editor width (used only for HTML/PHP mode) as characters
 		'textareaEditorHeight' => '20',		// Textarea editor height (used only for HTML/PHP mode) as characters
-		'richtextEditorEditorAreaCSS' => '/sitetech/global.css',	# CSS file to use in the editor area
-		'richtextEditorBasePath' => '/_fckeditor/',	// Location of the DHTML editing component files
-		'richtextEditorToolbarSet' => 'pureContent',	// Richtext editor Toolbar set (must exist in fckconfig-customised.js)
-		'richtextEditorToolbarSetBasic' => 'BasicLonger',	// Richtext editor Toolbar set (must exist in fckconfig-customised.js)
-		'CKFinder' => false,	// Whether to use the CKFinder plugin
+		'richtextEditorWidth' => '100%',		// Richtext editor width in pixels e.g. 400 or percent e.g. '80%'
+		'richtextEditorHeight' => '400px',		// Richtext editor height in pixels e.g. 400 or percent e.g. '80%'
+		'richtextEditorEditorAreaCSS' => array ('/sitetech/global.css', '/sitetech/generic.css'),	# CSS file to use in the editor area
+		'richtextEditorBasePath' => '/_ckeditor/',	// Location of the DHTML editing component files
+		'richtextEditorToolbarSet' => 'pureContent',	// Desired richtext editor Toolbar set
+		'richtextEditorToolbarSetBasic' => 'BasicLonger',	// Name of the basic editor toolbar set used for submenu file editing
+		'richtextEditorFileBrowser'	=> '/_ckfinder/',	// Path (must have trailing slash) of richtext file browser, or false to disable
 		'directoryIndex' => 'index.html',		// Default directory index name
 		'virtualPages'	=> false,		// Regexp location(s) where a page is claimed already to exist but there is no physical file
 		'newPageTemplate' => "\n<h1>%title</h1>\n<p>Content starts here</p>",	// Default directory index file contents
@@ -141,7 +138,7 @@ class pureContentEditor
 		'logout'	=> false,	// False if there is no logout available from the authentication agent or the location of the page
 		'disableDateLimitation' => false,	// Whether to disable the date limitation functionality
 		'allowNewLocation'		=> true,	// Whether to allow the adminisrator to approve the page at a new location
-		'enablePhpCheck' => true,	// Whether to check for PHP (if switched off, ensure this is enabled in the fckconfig-customised.js file)
+		'enablePhpCheck' => true,	// Whether to check for PHP
 		'allImagesRequireAltText'	=> true,	// Whether all images require alt text to be supplied
 		'blogs'			=> '/blogs/*',				// Blog root(s) - an array or single item; if ending with a *, indicates multiple underneath this root [only * currently supported]
 		'newBlogEntryTemplate' => "\n\n\n<h1>%title</h1>\n\n<p>Content starts here</p>",	// Default blog posting file contents
@@ -164,7 +161,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.8.13';
+	private $version = '1.9.0';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1574,22 +1571,18 @@ class pureContentEditor
 		$html  = "\n\n" . '<div id="purecontenteditorhelp">';
 		$html .= "\n<h1>Tips/help/about</h1>";
 		$html .= "\n<p>Welcome to the pureContentEditor! Use of this system is intended to be largely self-explanatory: you can browse around the site as normal, and perform various actions using the menu buttons above.</p>";
+		$html .= "\n<p>When you are finished, please use the 'Log out' button in the menu above, to protect the integrity of your account.</p>";
 		$html .= "\n<h2>Tips</h2>";
 		$html .= "\n" . "<p><a href=\"{$this->tipsUrl}\" target=\"_blank\"><strong>Help/tips on using the editor</strong></a> are available.</p>";
 		$html .= "\n<h2>Richtext editor user guide</h2>";
-		$html .= "\n" . "<p>There is also a comprehensive <a href=\"http://docs.fckeditor.net/FCKeditor_2.x/Users_Guide\" target=\"_blank\">user guide for the Microsoft Word-style editor part</a> of the system (the richtext editor).</p>";
+		$html .= "\n" . "<p>There is also a comprehensive <a href=\"http://docs.cksource.com/CKEditor_3.x/Users_Guide\" target=\"_blank\">user guide for the Microsoft Word-style editor part</a> of the system (the richtext editor).</p>";
 		$html .= "\n" . "<p>The HTML submitted in a richtext field will be cleaned on submission. If you don't want this to happen, go into source mode, and add to the <strong>start</strong>, the following: " . htmlspecialchars ($this->nofixTag) . '</p>';
-		$html .= "\n<h2>Requirements</h2>";
-		$html .= "\n" . '<p>Most modern browsers, as <a href="http://www.fckeditor.net/" target="external">listed at fckeditor.net</a>, are supported.</p>';
-		$html .= "\n<p>If your browser has a popup blocker, this must be disabled for this site.</p>";
-		$html .= "\n<p>The spell-checker facility requires IESpell and as such only works on the Internet Explorer browser.</p>";
-		$html .= "\n<p>When you are finished, please use the 'Log out' button in the menu above, to protect the integrity of your account.</p>";
 		$html .= "\n<h2>If you are having problems</h2>";
 		$html .= "\n<p>To get help on use of the system, <a href=\"{$this->page}?message\">contact an administrator</a> of the system.</p>";
 		$html .= "\n<h2>About</h2>";
-		$html .= "\n" . '<p>This system runs on the <strong>pureContentEditor</strong> software, which has been written by Martin Lucas-Smith, University of Cambridge. It is released under the <a href="http://opensource.org/licenses/gpl-license.php" target="external">GNU Public License</a>. The system is free, is installed at your own risk and no support is provided by the author, except where explicitly arranged.</p>';
-		$html .= "\n" . '<p>It makes use of the DHTML editor component <a href="http://www.fckeditor.net/" target="external">FCKeditor</a>, which is also licenced under the GPL.</p>';
-		$html .= "\n" . '<p><a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/" target="external">Technical documentation and information on new releases</a> on the pureContentEditor software is available.</p>';
+		$html .= "\n" . '<p>This system runs on the <strong>pureContentEditor</strong> software, which has been written by Martin Lucas-Smith, University of Cambridge. It is released under the <a href="http://opensource.org/licenses/gpl-license.php" target="_blank">GNU Public License</a>. The system is free, is installed at your own risk and no support is provided by the author, except where explicitly arranged.</p>';
+		$html .= "\n" . '<p>It makes use of the DHTML editor component <a href="http://ckeditor.com/" target="_blank">CKEditor</a>, which is also licenced under the GPL.</p>';
+		$html .= "\n" . '<p><a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/" target="_blank">Technical documentation and information on new releases</a> on the pureContentEditor software is available.</p>';
 		$html .= "\n<p>This is version <em>{$this->version}</em> of the pureContentEditor.</p>";
 		$html .= "\n" . '</div>';
 		
@@ -1863,36 +1856,30 @@ class pureContentEditor
 					
 					# Create the richtext field
 					$form->richtext (array (
-						'name'			=> 'content',
-						'title'					=> 'Page content',
-						'required'				=> true,
-						'width'					=> $this->richtextEditorWidth,
-						'height'				=> $this->richtextEditorHeight,
-						'default'				=> $contents,
-						'editorBasePath'		=> $this->richtextEditorBasePath,
-						'editorToolbarSet'		=> $editorToolbarSet,
-						'CKFinder'				=> $this->CKFinder,					// Whether to use the CKFinder plugin
-						'editorConfig'			=> array (
-							'CustomConfigurationsPath'	=> $this->richtextEditorBasePath . 'fckconfig-customised.js',
-							'StartupFocus'			=> true,
-							'EditorAreaCSS'			=> $this->richtextEditorEditorAreaCSS,
-							'BaseHref'				=> $this->liveSiteUrl . $this->currentDirectory,	// Adds support for relative images
-							'BodyId'			=> ($this->bodyAttributes ? pureContent::bodyAttributesId () : false),
-							'BodyClass'			=> ($this->bodyAttributes ? pureContent::bodyAttributesClass () : false),
-							'CKFinderAccessControl'	=> $this->cKFinderAccessControl (),	// Access Control List (ACL) passed to CKFinder in the format it requires
-							#!# Ideally, various items at http://docs.fckeditor.net/CKFinder/Developers_Guide/PHP/Integration#Properties would be settable, i.e.
-							### DisableThumbnailSelection, StartupPath, StartupFolderExpanded
-							//'CKFinderStartupPath'	=> false,		// CKFinder startup path, or false to disable
-						),
-						'allowCurlyQuotes'		=> $this->allowCurlyQuotes,
-						'protectEmailAddresses' => $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
-						'externalLinksTarget'	=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
-						'directoryIndex' 		=> $this->directoryIndex,			// Default directory index name
-						'imageAlignmentByClass'	=> $this->imageAlignmentByClass,	// Replace align="foo" with class="foo" for images
-						'replacements'			=> $replacements,
-						'nofixTag'				=> $this->nofixTag,
-						'removeComments'		=> $this->removeComments,
-						'disallow'				=> ($this->allImagesRequireAltText ? array ('<img ([^>]*)alt=""([^>]*)>' => 'All images must have alternative text supplied, for accessibility reasons. Please correct this by right-clicking on the image, selecting \'Image Properties\' and entering a description of the image in the field marked \'Alternative Text\'.') : false),	// Images without alternative text
+						'name'							=> 'content',
+						'title'							=> 'Page content',
+						'required'						=> true,
+						'default'						=> $contents,
+						'autofocus'						=> true,
+						'editorBasePath'				=> $this->richtextEditorBasePath,
+						'editorToolbarSet'				=> $editorToolbarSet,
+						'editorFileBrowser'				=> $this->richtextEditorFileBrowser,	// Path of file browser (or false to disable)
+						'editorFileBrowserStartupPath'	=> $this->currentDirectory,
+						'editorFileBrowserACL'			=> $this->cKFinderAccessControl (),	// Access Control List (ACL) passed to CKFinder in the format it requires
+						'width'							=> $this->richtextEditorWidth,
+						'height'						=> $this->richtextEditorHeight,
+						'config.contentsCss'			=> $this->richtextEditorEditorAreaCSS,	// Or array of stylesheets
+						'config.bodyId'					=> ($this->bodyAttributes ? pureContent::bodyAttributesId () : false),
+						'config.bodyClass'				=> ($this->bodyAttributes ? pureContent::bodyAttributesClass () : false),
+						'allowCurlyQuotes'				=> $this->allowCurlyQuotes,
+						'protectEmailAddresses'			=> $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
+						'externalLinksTarget'			=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
+						'directoryIndex' 				=> $this->directoryIndex,			// Default directory index name
+						'imageAlignmentByClass'			=> $this->imageAlignmentByClass,	// Replace align="foo" with class="foo" for images
+						'replacements'					=> $replacements,
+						'nofixTag'						=> $this->nofixTag,
+						'removeComments'				=> $this->removeComments,
+						'disallow'						=> ($this->allImagesRequireAltText ? array ('<img ([^>]*)alt=""([^>]*)>' => 'All images must have alternative text supplied, for accessibility reasons. Please correct this by right-clicking on the image, selecting \'Image Properties\' and entering a description of the image in the field marked \'Alternative Text\'.') : false),	// Images without alternative text
 					));
 				}
 		}
@@ -1991,7 +1978,7 @@ class pureContentEditor
 	private function cKFinderAccessControl ()
 	{
 		# End if not using CKFinder
-		if (!$this->CKFinder) {return false;}
+		if (!$this->richtextEditorFileBrowser) {return false;}
 		
 		# Get the current user's permissions
 		if ($this->userIsAdministrator) {
@@ -2021,6 +2008,7 @@ class pureContentEditor
 		foreach ($currentUserPermissions as $location) {
 			
 			# Deal with the three cases of /, /*, /filename.html
+			#!# Limited implementation of /filename.html currently - results in greater rights than intended at present
 			$treeRights = false;
 			switch (substr ($location, -1)) {
 				case '*':
