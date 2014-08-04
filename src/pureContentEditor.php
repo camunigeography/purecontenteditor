@@ -161,7 +161,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.0';
+	private $version = '1.9.1';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -2867,17 +2867,27 @@ class pureContentEditor
 		
 		# Change the administrator indication
 		$usersFormatted = array ();
+
 		foreach ($users as $user => $attributes) {
+			$usersFormatted[$user][''] = '';
 			if (!isSet ($attributes['Source']) || (isSet ($attributes['Source']) && ($attributes['Source'] != 'Lookup (database)'))) {
-				$user = "<a href=\"?userAmend={$user}\">{$user}</a>";
+				$usersFormatted[$user][''] = "<a href=\"?userAmend={$user}\"><strong>{$user}</strong></a>";
 			}
-			$usersFormatted[$user] = $attributes;
+ 			$usersFormatted[$user]['Forename'] = htmlspecialchars ($attributes['Forename']);
+			$usersFormatted[$user]['Surname'] = htmlspecialchars ($attributes['Surname']);
+			$usersFormatted[$user]['E-mail'] = htmlspecialchars ($attributes['E-mail']);
 			$usersFormatted[$user]['Administrator'] = ($attributes['Administrator'] ? 'Yes' : 'No');
+			if (isSet ($attributes['Source'])) {
+				$usersFormatted[$user]['Source'] = $attributes['Source'];
+			}
+			$usersFormatted[$user]['Actions...']  = "<a href=\"?userAmend={$user}\" title=\"Edit...\"><img src=\"/images/icons/pencil.png\" class=\"icon\" /></a>";
+			$usersFormatted[$user]['Actions...'] .= " <a href=\"?userRemove={$user}\" title=\"Delete...\"><img src=\"/images/icons/bin.png\" class=\"icon\" /></a>";
+			$usersFormatted[$user]['Actions...'] .= " <a target=\"_blank\" class=\"noarrow\" href=\"http://www.lookup.cam.ac.uk/person/crsid/{$user}\" title=\"Lookup\"><img src=\"/images/icons/help.png\" class=\"icon\" /></a>";
 		}
 		
 		# Compile the HTML of the table of current users
 		$html .= "\n<p class=\"information\">The following are currently registered as users of the editing system.<br />" . ($this->lookup ? "To edit a user's details, click on their username, though please note that those users whose details are sourced from a database lookup cannot be edited here but must be edited in the source database instead." : "To edit a user's details, click on their username.") . '</p>';
-		$html .= application::htmlTable ($usersFormatted);
+		$html .= application::htmlTable ($usersFormatted, array (), 'lines', $keyAsFirstColumn = false, false, $allowHtml = true);
 		
 		# Return the HTML
 		return $html;
@@ -3140,6 +3150,7 @@ class pureContentEditor
 		    'values'            => $deletableUsers,
 		    'title'                    => 'User to delete',
 		    'required'        => 1,
+			'get' => __FUNCTION__,
 			'description'	=> ($this->usersWithUnapprovedSubmissions ? "If the user you are wanting to delete is not listed, it is because they have <a href=\"{$this->page}?review\">submissions awaiting approval</a>." : ''),
 		));
 		$form->input (array (
@@ -3316,6 +3327,7 @@ class pureContentEditor
 		$html .= "\n\t\t" . '<th>Can make changes to:</th>';
 		$html .= "\n\t\t" . '<th>Can make pages live directly?</th>';
 		if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<th>Date limitation?</th>';}
+		$html .= "\n\t\t" . '<th>Actions..</th>';
 		
 		#!# Clumsy; refactor this whole section to organise the data first then just application::htmlTable() it
 		foreach ($permissions as $permission => $attributes) {
@@ -3336,6 +3348,7 @@ class pureContentEditor
 			$html .= "\n\t\t" . '<td>' . ($this->userIsAdministrator ($attributes['Username']) ? 'Yes (administrator)' : ($attributes['Self-approval'] ? 'Yes': 'No')) . '</td>';
 			if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<td>' . $this->formatDateLimitation ($attributes['Startdate'], $attributes['Enddate']) . '</td>';}
 			if (isSet ($attributes['Source'])) {$html .= "\n\t\t" . '<td>' . $attributes['Source'] . '</td>';}
+			$html .= "\n\t\t<td>" . "<a href=\"?permissionAmend={$permission}\" title=\"Edit...\"><img src=\"/images/icons/pencil.png\" class=\"icon\" /></a>" . " <a href=\"?permissionRevoke={$permission}\" title=\"Delete...\"><img src=\"/images/icons/bin.png\" class=\"icon\" /></a> <a target=\"_blank\" class=\"noarrow\" href=\"http://www.lookup.cam.ac.uk/person/crsid/{$attributes['Username']}\" title=\"Lookup\"><img src=\"/images/icons/help.png\" class=\"icon\" /></a></td>";
 			$html .= "\n\t" . '</tr>';
 		}
 		$html .= "\n" . '</table>';
