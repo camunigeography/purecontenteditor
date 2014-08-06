@@ -155,13 +155,15 @@ class pureContentEditor
 		'allowCurlyQuotes' => false,	// Whether to allow curly quotes (e.g. from MS Word)
 		'removeComments' => true,	// Whether the richtext editor should remove comments (NB disabling this will leave comment tags relating to WordHTML behind)
 		'nameInEmail' => true,	// Whether e-mail should be formatted as Name <address@domain> or just address@domain
+		'autocomplete' => false,	// Autocomplete data endpoint for adding new users
+		'emailDomain'	=> false,	// E-mail domain, e.g. 'example.com', used for auto-populating of the e-mail address when using autocomplete
 	);
 	
 	# Specify the minimum version of PHP required
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.1';
+	private $version = '1.9.2';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -2923,40 +2925,64 @@ class pureContentEditor
 			}
 		}
 		
+		# Define autocomplete options parameter for the form widget; see: http://jqueryui.com/demos/autocomplete/#remote
+		$autocompleteOptions = false;
+		if ($this->autocomplete) {
+			# JS function to copy the e-mail address, and extract name and split it into forename and surname; see: http://stackoverflow.com/a/12340803
+			$focusSelectJsFunction = "
+				function( event, ui ) {
+					var name = ui.item.label.replace(/^.+\((.+)\)$/g, '$1');
+					var forename = name.split(' ').slice(0, -1).join(' ');
+					var surname = name.split(' ').slice(-1).join(' ');
+					$( '#userAdd_E-mail' ).val( ui.item.value " . ($this->emailDomain ? "+ '@{$this->emailDomain}' " : '') . ");
+					$( '#userAdd_Forename' ).val( forename );
+					$( '#userAdd_Surname' ).val( surname );
+				}
+			";
+			$autocompleteOptions = array (
+				'delay'		=> 0,
+				'focus'		=> $focusSelectJsFunction,
+				'select'	=> $focusSelectJsFunction,
+			);
+		}
+		
 		# Widgets
 		$form->input (array (
-		    'name'            => 'Username',
-		    'title'                    => "New user's username",
-			'description' =>  "Usernames can only have lower-case alphanumeric characters and must be at least {$this->minimumUsernameLength} " . ($this->minimumUsernameLength == 1 ? 'character' : 'characters') . ' in length',
-		    'required'                => true,
-		    'size'                => 10,
-		    'maxlength'                => 10,
-			'default' => ($firstRun ? $this->user : ''),
+		    'name'					=> 'Username',
+		    'title'					=> "New user's username",
+			'description'			=> "Usernames can only have lower-case alphanumeric characters and must be at least {$this->minimumUsernameLength} " . ($this->minimumUsernameLength == 1 ? 'character' : 'characters') . ' in length',
+		    'required'				=> true,
+		    'size'					=> 10,
+		    'maxlength'				=> 10,
+			'default'				=> ($firstRun ? $this->user : ''),
 			'regexp'				=> "^[a-z0-9]{{$this->minimumUsernameLength},}$",
-			'current' => $users,
+			'current'				=> $users,
+			'autofocus'				=> true,
+			'autocomplete'			=> $this->autocomplete,
+			'autocompleteOptions'	=> $autocompleteOptions,
 		));
 		$form->email (array (
-		    'name'            => 'E-mail',
-		    'title'                    => 'E-mail address',
-		    'required'                => true,
+		    'name'				=> 'E-mail',
+		    'title'				=> 'E-mail address',
+		    'required'			=> true,
 		));
 		$form->input (array (
-		    'name'            => 'Forename',
-		    'title'                    => 'Forename',
-		    'required'                => true,
+		    'name'				=> 'Forename',
+		    'title'				=> 'Forename',
+		    'required'			=> true,
 		));
 		$form->input (array (
-		    'name'            => 'Surname',
-		    'title'                    => 'Surname',
-		    'required'                => true,
+		    'name'				=> 'Surname',
+		    'title'				=> 'Surname',
+		    'required'			=> true,
 		));
 		if (!$firstRun) {
 			$makeAdministratorText = 'Administrator';
 			$form->checkboxes (array (
-			    'name'            => 'Administrator',
-			    'values'            => array ($makeAdministratorText,),
-			    'title'                    => 'Grant administrative rights?',
-				'description' =>  'Warning! This will give the right to approve pages, grant new users, etc.',
+			    'name'			=> 'Administrator',
+			    'values'		=> array ($makeAdministratorText,),
+			    'title'			=> 'Grant administrative rights?',
+				'description'	=> 'Warning! This will give the right to approve pages, grant new users, etc.',
 			));
 		}
 		$form->textarea ($this->additionalMessageWidget);
