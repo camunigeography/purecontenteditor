@@ -90,8 +90,8 @@ class pureContentEditor
 		'userDatabase' => '/.users.csv',		// User database
 		'permissionsDatabase' => '/.permissions.csv',	// Permissions database
 		'changelog' => '/.changelog.csv',		// Changelog
-		'textareaEditorWidth' => '90',		// Textarea editor width (used only for HTML/PHP mode) as characters
-		'textareaEditorHeight' => '20',		// Textarea editor height (used only for HTML/PHP mode) as characters
+		'textareaEditorWidth' => '125',		// Textarea editor width (used only for HTML/PHP mode) as characters
+		'textareaEditorHeight' => '30',		// Textarea editor height (used only for HTML/PHP mode) as characters
 		'richtextEditorWidth' => '100%',		// Richtext editor width in pixels e.g. 400 or percent e.g. '80%'
 		'richtextEditorHeight' => '400px',		// Richtext editor height in pixels e.g. 400 or percent e.g. '80%'
 		'richtextEditorEditorAreaCSS' => array ('/sitetech/global.css', '/sitetech/generic.css'),	# CSS file to use in the editor area
@@ -163,7 +163,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.2';
+	private $version = '1.9.3';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1743,7 +1743,7 @@ class pureContentEditor
 #!# Needs to check if the page already exists - should allow editing of a badly-named existing page
 		$regexp = $this->validPageNameRegexp ();
 		$delimiter = '@';
-		if (!preg_match ($delimiter . addcslashes ($regexp, $delimiter) . $delimiter, $pagename)) {
+		if (!preg_match ($delimiter . addcslashes ($regexp, $delimiter) . $delimiter, $pagename) && !array_key_exists ($this->page, $houseStyleFiles)) {
 			$html = "<p class=\"warning\">The pagename you requested " . htmlspecialchars ($pagename) . " is invalid. Please go to <a href=\"{$this->currentDirectory}?newPage\">create a new page</a> again.</p>";
 			return $html;
 		}
