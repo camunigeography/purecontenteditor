@@ -163,7 +163,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.3';
+	private $version = '1.9.4';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1866,13 +1866,13 @@ class pureContentEditor
 						'editorBasePath'				=> $this->richtextEditorBasePath,
 						'editorToolbarSet'				=> $editorToolbarSet,
 						'editorFileBrowser'				=> $this->richtextEditorFileBrowser,	// Path of file browser (or false to disable)
-						'editorFileBrowserStartupPath'	=> $this->currentDirectory,
+						'editorFileBrowserStartupPath'	=> ($this->currentDirectory == '/' ? '/images/' : $this->currentDirectory),
 						'editorFileBrowserACL'			=> $this->cKFinderAccessControl (),	// Access Control List (ACL) passed to CKFinder in the format it requires
 						'width'							=> $this->richtextEditorWidth,
 						'height'						=> $this->richtextEditorHeight,
 						'config.contentsCss'			=> $this->richtextEditorEditorAreaCSS,	// Or array of stylesheets
 						'config.bodyId'					=> ($this->bodyAttributes ? pureContent::bodyAttributesId () : false),
-						'config.bodyClass'				=> ($this->bodyAttributes ? pureContent::bodyAttributesClass () : false),
+						'config.bodyClass'				=> ($this->bodyAttributes ? pureContent::bodyAttributesClass () . ' editorwindowstyle' : false),
 						'allowCurlyQuotes'				=> $this->allowCurlyQuotes,
 						'protectEmailAddresses'			=> $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
 						'externalLinksTarget'			=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
@@ -4301,6 +4301,13 @@ class pureContentEditor
 			$madeLiveOk = false;
 			return $html;
 		}
+		
+		/* Disabled as this generates "PHP Warning:  touch(): Utime failed: Operation not permitted"
+		# Ensure the file save time is as originally submitted, not the time of approval
+		$fileModificationUnixtime = $this->convertTimestamp ($this->submissions[$submittedFile]['timestamp'], true, $asUnixtime = true);
+		touch ($newFileLiveLocationFromRoot, $fileModificationUnixtime);
+		*/
+		
 		$html .= $this->logChange (($directly ? 'New ' . ($this->blogMode ? 'blog posting' : 'page') . ' directly' : "Submitted file $submittedFile approved and") . " saved to $newFileLiveLocation on live site");
 		$newFileLiveLocationChopped = $this->chopDirectoryIndex ($newFileLiveLocation);
 		if ($newFileLiveLocationChopped == '/') {$newFileLiveLocationChopped = '';}
