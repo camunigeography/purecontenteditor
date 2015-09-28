@@ -27,7 +27,7 @@
 #!# Option not to mail yourself when you approve your own page and you are the only administrator
 #!# Audit the use of relative links in the richtext component
 #!# Checking writability needs to be done on the proposed file, NOT at top level
-
+#!# In edit mode, need to include pureContentHeadermenuFile/pureContentFootermenuFile in same way as browse mode
 
 
 
@@ -163,7 +163,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.4';
+	private $version = '1.9.5';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -367,8 +367,8 @@ class pureContentEditor
 			if (($_SERVER['REQUEST_URI'] != '/') && (!preg_match ('@^/\?returnto=@', $_SERVER['REQUEST_URI']))) {
 				$redirectTo = "{$this->editSiteUrl}/?returnto=" . urlencode ($_SERVER['REQUEST_URI']);
 				application::sendHeader (302, $redirectTo);
-				$setupErrors[] = 'Attempting to redirect to a <a href="' . htmlspecialchars ($redirectTo) . '">login page</a> in case the current location does not support a login context';
-				return $setupErrors;
+				$errorsHtml .= $this->reportErrors ('Attempting to redirect to a <a href="' . htmlspecialchars ($redirectTo) . '">login page</a> in case the current location does not support a login context... [NB If this message is visible, then output_buffering is not enabled for the present URL, though that may not be possible to enable.]');
+				return $errorsHtml;
 			}
 			
 			# Otherwise, register an error
