@@ -4,14 +4,14 @@
  * A class to create an editing facility on top of a pureContent-enabled site
  * 
  * @package pureContentEditor
- * @license	http://opensource.org/licenses/gpl-license.php GNU Public License
- * @author	{@link http://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-14
+ * @license	https://opensource.org/licenses/gpl-license.php GNU Public License
+ * @author	{@link https://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-17
  * @version See $version below
  * 
  * REQUIREMENTS:
  * - PHP should ideally have the Tidy extension compiled/loaded
- * - Requires libraries application.php, csv.php, directories.php, pureContent.php and ultimateForm.php, all available from http://download.geog.cam.ac.uk/projects/
- * - Uses the CKEditor (open source) and CKFinder (requires license purchase) DHTML components - http://ckeditor.com/ - to provide the richtext field
+ * - Requires libraries application.php, csv.php, directories.php, pureContent.php and ultimateForm.php, all available from https://download.geog.cam.ac.uk/projects/
+ * - Uses the CKEditor (open source) and CKFinder (requires license purchase) DHTML components - https://ckeditor.com/ - to provide the richtext field
  * - Assumes that the server will supply a username - e.g. using AuthType or the University of Cambridge's Raven service
  * - Requires mod_rewrite enabled in Apache
  */
@@ -38,7 +38,7 @@
 # Groups facility
 # Automatic deletion of permissions when folders don't exist, if a setting is turned on for this (NB needs to distinguish between not present and no permission - may not be possible)
 # More extensive menu editing system for the switch in edit ()
-# Provide a validation system (perhaps using Tidy if it is not already)? - See: http://thraxil.org/users/anders/posts/2005/09/20/Validation-meet-Unit-Testing-Unit-Testing-meet-Validation/
+# Provide a validation system (perhaps using Tidy if it is not already)? - See: https://thraxil.org/users/anders/posts/2005/09/20/Validation-meet-Unit-Testing-Unit-Testing-meet-Validation/
 # Add a link checking mechanism
 # Extension to deal with deleting/moving files or even whole folders? - would create major difficulties with integration with redirects etc, however
 # Tighten up matching of ' src=' (currently will match that string outside an img tag)
@@ -52,7 +52,7 @@
 # Enable explicit creation of .title.txt files
 # Sort by ... for reviewing
 # Diffing function - apparently wikimedia includes a good PHP class for this - see http://cvs.sourceforge.net/viewcvs.py/wikipedia/phase3/includes/  - difference engine
-# Cookie, /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.0/mod/mod_rewrite.html#rewriterule
+# Cookie, /login and own passwords ability; avoids :8080 links, etc; see also flags such as cookie/env at http://httpd.apache.org/docs/2.4/mod/mod_rewrite.html#rewriterule
 # Direct update rights
 # Link checker
 # Option to ban top-level _directory_ creation as well as files
@@ -147,7 +147,7 @@ class pureContentEditor
 		'lookup'	=> array (),	// Array of areas which people have automatic editing rights rather than being stored by pureContentEditor, as array (username1 => array (Username,Forename,Surname,E-mail,Location and optionally Administrator (as value 1 or 0)), username2...)
 		'bodyAttributes'	=> true, 	// Whether to apply body attributes to the editing area
 		'charset'							=> 'UTF-8',		# Encoding used in entity conversions; www.joelonsoftware.com/articles/Unicode.html is worth a read
-		'tipsUrl'				=> 'http://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf',	// Location of tip sheet
+		'tipsUrl'				=> 'https://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf',	// Location of tip sheet
 		'helpNewWindow'				=> false,	// Whether the help page should open in a new window
 		'makeLiveDefaultChecked' => true,	// Whether the 'make live by default' option should be checked by default
 		'leaveLink'	=> false,		// Whether to add a link for 'leave editing mode'
@@ -163,7 +163,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.5';
+	private $version = '1.9.6';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -241,6 +241,17 @@ class pureContentEditor
 		if (!$this->validUser ()) {
 			$html .= application::showUserErrors ('You are not in the list of allowed users and so have no access to the editing facility.');
 			return $html;
+		}
+		
+		# Set a cookie, to enable the live site to show a login link for users who have previous used the editor; this is set using Javascript, to avoid the need for output_buffering to be switched on
+		$cookieName = 'purecontenteditorlink';
+		if (!isSet ($_COOKIE[$cookieName])) {
+			$expiryTime = time () + (60*60*24 * 365 * 2);	// 2 years
+			$expires = date ('D, d M Y H:i:s \G\M\T', $expiryTime);	// E.g. "Thu, 01 Jan 1970 00:00:00 GMT"
+			$liveSiteHostName = preg_replace ('|^https?://(.+)$|', '\1', $this->liveSiteUrl);
+			$commonDomain = application::commonDomain ($this->editHostName, $liveSiteHostName);
+			$cookieHtml = "<script type=\"text/javascript\">document.cookie = '{$cookieName}=1; path=/; domain={$commonDomain}; expires={$expires}'</script>";	// See: https://developer.mozilla.org/en-US/docs/Web/API/document/cookie
+			$html .= $cookieHtml;
 		}
 		
 		# Determine whether the user is an administrator
@@ -1023,6 +1034,9 @@ class pureContentEditor
 			$locations[] = $this->permissions[$permission]['Location'];
 		}
 		
+		# Sort more specific permissions first, e.g. so that /foo/bar.html which might have Self-approval=true comes before /foo/
+		array_multisort (array_map ('strlen', $locations), SORT_DESC, $locations);	// See: https://stackoverflow.com/a/24874824
+		
 		# Get the user's rights in detail
 		$rights = $this->matchLocation ($locations, $page, $determineLocationInUse = true);
 		
@@ -1577,14 +1591,14 @@ class pureContentEditor
 		$html .= "\n<h2>Tips</h2>";
 		$html .= "\n" . "<p><a href=\"{$this->tipsUrl}\" target=\"_blank\"><strong>Help/tips on using the editor</strong></a> are available.</p>";
 		$html .= "\n<h2>Richtext editor user guide</h2>";
-		$html .= "\n" . "<p>There is also a comprehensive <a href=\"http://docs.cksource.com/CKEditor_3.x/Users_Guide\" target=\"_blank\">user guide for the Microsoft Word-style editor part</a> of the system (the richtext editor).</p>";
+		$html .= "\n" . "<p>There is also a comprehensive <a href=\"https://docs-old.ckeditor.com/CKEditor_3.x/Users_Guide\" target=\"_blank\">user guide for the Microsoft Word-style editor part</a> of the system (the richtext editor).</p>";
 		$html .= "\n" . "<p>The HTML submitted in a richtext field will be cleaned on submission. If you don't want this to happen, go into source mode, and add to the <strong>start</strong>, the following: " . htmlspecialchars ($this->nofixTag) . '</p>';
 		$html .= "\n<h2>If you are having problems</h2>";
 		$html .= "\n<p>To get help on use of the system, <a href=\"{$this->page}?message\">contact an administrator</a> of the system.</p>";
 		$html .= "\n<h2>About</h2>";
-		$html .= "\n" . '<p>This system runs on the <strong>pureContentEditor</strong> software, which has been written by Martin Lucas-Smith, University of Cambridge. It is released under the <a href="http://opensource.org/licenses/gpl-license.php" target="_blank">GNU Public License</a>. The system is free, is installed at your own risk and no support is provided by the author, except where explicitly arranged.</p>';
-		$html .= "\n" . '<p>It makes use of the DHTML editor component <a href="http://ckeditor.com/" target="_blank">CKEditor</a>, which is also licenced under the GPL.</p>';
-		$html .= "\n" . '<p><a href="http://download.geog.cam.ac.uk/projects/purecontenteditor/" target="_blank">Technical documentation and information on new releases</a> on the pureContentEditor software is available.</p>';
+		$html .= "\n" . '<p>This system runs on the <strong>pureContentEditor</strong> software, which has been written by Martin Lucas-Smith, University of Cambridge. It is released under the <a href="https://opensource.org/licenses/gpl-license.php" target="_blank">GNU Public License</a>. The system is free, is installed at your own risk and no support is provided by the author, except where explicitly arranged.</p>';
+		$html .= "\n" . '<p>It makes use of the DHTML editor component <a href="https://ckeditor.com/" target="_blank">CKEditor</a>, which is also licenced under the GPL.</p>';
+		$html .= "\n" . '<p><a href="https://download.geog.cam.ac.uk/projects/purecontenteditor/" target="_blank">Technical documentation and information on new releases</a> on the pureContentEditor software is available.</p>';
 		$html .= "\n<p>This is version <em>{$this->version}</em> of the pureContentEditor.</p>";
 		$html .= "\n" . '</div>';
 		
@@ -1854,6 +1868,7 @@ class pureContentEditor
 						" href=\"{$this->liveSiteUrl}/"	=> " href=\"/",	// Ensure images are not prefixed with the edit site's URL
 						" src=\"{$this->liveSiteUrl}/"	=> 'src="/',	// Ensure images are not prefixed with the current site's URL
 						" href=\"http://{$this->liveSiteUrl}:{$this->editHostPort}/"	=> ' href=\"/',	// Workaround for Editor port reassignment bug
+						" href=\"https://{$this->liveSiteUrl}:{$this->editHostPort}/"	=> ' href=\"/',	// Workaround for Editor port reassignment bug
 					);
 					
 					# Create the richtext field
@@ -2243,14 +2258,15 @@ class pureContentEditor
 		$form->heading (2, 'Add an image');
 		$form->heading ('p', $restrictions);
 		$form->upload (array (
-			'name'				=> 'image',
-			'title'				=> 'Select the image',
-			'directory'			=> $imageStore,
-			'allowedExtensions'	=> array ($extension),
-			'required'			=> true,
-			'forcedFileName'	=> $this->user,		// To prevent clashes when uploading
-			'flatten'		=> true,
-			'autofocus'		=> true,
+			'name'					=> 'image',
+			'title'					=> 'Select the image',
+			'directory'				=> $imageStore,
+			'allowedExtensions'		=> array ($extension),
+			'required'				=> true,
+			'forcedFileName'		=> $this->user,		// To prevent clashes when uploading
+			'lowercaseExtension'	=> true,
+			'flatten'				=> true,
+			'autofocus'				=> true,
 		));
 		$form->input (array (
 			'name'			=> 'name',
@@ -2884,7 +2900,7 @@ class pureContentEditor
 			}
 			$usersFormatted[$user]['Actions...']  = "<a href=\"?userAmend={$user}\" title=\"Edit...\"><img src=\"/images/icons/pencil.png\" class=\"icon\" /></a>";
 			$usersFormatted[$user]['Actions...'] .= " <a href=\"?userRemove={$user}\" title=\"Delete...\"><img src=\"/images/icons/bin.png\" class=\"icon\" /></a>";
-			$usersFormatted[$user]['Actions...'] .= " <a target=\"_blank\" class=\"noarrow\" href=\"http://www.lookup.cam.ac.uk/person/crsid/{$user}\" title=\"Lookup\"><img src=\"/images/icons/help.png\" class=\"icon\" /></a>";
+			$usersFormatted[$user]['Actions...'] .= " <a target=\"_blank\" class=\"noarrow\" href=\"https://www.lookup.cam.ac.uk/person/crsid/{$user}\" title=\"Lookup\"><img src=\"/images/icons/help.png\" class=\"icon\" /></a>";
 		}
 		
 		# Compile the HTML of the table of current users
@@ -2925,10 +2941,10 @@ class pureContentEditor
 			}
 		}
 		
-		# Define autocomplete options parameter for the form widget; see: http://jqueryui.com/demos/autocomplete/#remote
+		# Define autocomplete options parameter for the form widget; see: http://jqueryui.com/autocomplete/#remote
 		$autocompleteOptions = false;
 		if ($this->autocomplete) {
-			# JS function to copy the e-mail address, and extract name and split it into forename and surname; see: http://stackoverflow.com/a/12340803
+			# JS function to copy the e-mail address, and extract name and split it into forename and surname; see: https://stackoverflow.com/a/12340803
 			$focusSelectJsFunction = "
 				function( event, ui ) {
 					var name = ui.item.label.replace(/^.+\((.+)\)$/g, '$1');
@@ -3374,7 +3390,7 @@ class pureContentEditor
 			$html .= "\n\t\t" . '<td>' . ($this->userIsAdministrator ($attributes['Username']) ? 'Yes (administrator)' : ($attributes['Self-approval'] ? 'Yes': 'No')) . '</td>';
 			if (!$this->disableDateLimitation) {$html .= "\n\t\t" . '<td>' . $this->formatDateLimitation ($attributes['Startdate'], $attributes['Enddate']) . '</td>';}
 			if (isSet ($attributes['Source'])) {$html .= "\n\t\t" . '<td>' . $attributes['Source'] . '</td>';}
-			$html .= "\n\t\t<td>" . "<a href=\"?permissionAmend={$permission}\" title=\"Edit...\"><img src=\"/images/icons/pencil.png\" class=\"icon\" /></a>" . " <a href=\"?permissionRevoke={$permission}\" title=\"Delete...\"><img src=\"/images/icons/bin.png\" class=\"icon\" /></a> <a target=\"_blank\" class=\"noarrow\" href=\"http://www.lookup.cam.ac.uk/person/crsid/{$attributes['Username']}\" title=\"Lookup\"><img src=\"/images/icons/help.png\" class=\"icon\" /></a></td>";
+			$html .= "\n\t\t<td>" . "<a href=\"?permissionAmend={$permission}\" title=\"Edit...\"><img src=\"/images/icons/pencil.png\" class=\"icon\" /></a>" . " <a href=\"?permissionRevoke={$permission}\" title=\"Delete...\"><img src=\"/images/icons/bin.png\" class=\"icon\" /></a> <a target=\"_blank\" class=\"noarrow\" href=\"https://www.lookup.cam.ac.uk/person/crsid/{$attributes['Username']}\" title=\"Lookup\"><img src=\"/images/icons/help.png\" class=\"icon\" /></a></td>";
 			$html .= "\n\t" . '</tr>';
 		}
 		$html .= "\n" . '</table>';
