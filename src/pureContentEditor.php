@@ -5,7 +5,7 @@
  * 
  * @package pureContentEditor
  * @license	https://opensource.org/licenses/gpl-license.php GNU Public License
- * @author	{@link https://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-17
+ * @author	{@link https://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-20
  * @version See $version below
  * 
  * REQUIREMENTS:
@@ -78,6 +78,7 @@ class pureContentEditor
 {
 	# Specify available arguments as defaults or as NULL (to represent a required argument)
 	private $parameterDefaults = array (
+		#!# Default needs changing
 		'editHostScheme' => 'http',				// Scheme of the editing site (i.e. http or https)
 		'editHostName' => NULL,					// Hostname of the editing site
 		'editHostPort' => 80,					// Port number of the editing site
@@ -146,6 +147,7 @@ class pureContentEditor
 		'newBlogTreeRootTemplate' => "<h1>Blogs</h1>\n\n<p>Welcome to the blogs section!</p>\n<p>The following blogs are available at present:</p>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogList ();\n?>",
 		'lookup'	=> array (),	// Array of areas which people have automatic editing rights rather than being stored by pureContentEditor, as array (username1 => array (Username,Forename,Surname,E-mail,Location and optionally Administrator (as value 1 or 0)), username2...)
 		'bodyAttributes'	=> true, 	// Whether to apply body attributes to the editing area
+		'bodyClassExtra'	=> false,		// Any additional class to add to the body attributes
 		'charset'							=> 'UTF-8',		# Encoding used in entity conversions; www.joelonsoftware.com/articles/Unicode.html is worth a read
 		'tipsUrl'				=> 'https://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf',	// Location of tip sheet
 		'helpNewWindow'				=> false,	// Whether the help page should open in a new window
@@ -163,7 +165,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.7';
+	private $version = '1.9.8';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1468,7 +1470,9 @@ class pureContentEditor
 		# Compile the task box HTML
 		$html  = "\n\n<div id=\"administration\" class=\"graybox\">";
 		$html .= "\n\n<p class=\"right\"><a href=\"" . ($this->logout ? $this->logout : '?logout') . '" title="Log out when you have finished working with the editing system to secure your account">[Log out]</a></p>';
-		$html .= "\n\t<p><em>pureContentEditor</em> actions available here for <strong>{$this->user}" . ($this->userIsAdministrator ? ' (ADMIN)' : '') . '</strong>:</p>';
+		$user = $this->users[$this->user];
+		$name = $user['Forename'] . ' ' . $user['Surname'];
+		$html .= "\n\t<p><em>pureContentEditor</em> actions available here for <strong>" . htmlspecialchars ($name) . ' &lt;' . $this->user . '&gt;' . ($this->userIsAdministrator ? ' (ADMIN)' : '') . '</strong>:</p>';
 		$html .= "\n\t<ul id=\"administrationtypes\">";
 		foreach ($menu as $group => $actions) {
 			$html .= "\n\t\t<li>{$group}:";
@@ -1736,6 +1740,12 @@ class pureContentEditor
 			return $html;
 		}
 		
+		# Add styles
+		$html .= '
+		<style type="text/css">
+			#sidebar {display: none;}
+		</style>
+		';
 		
 		# If the current section does not exist, require section creation as high up the tree as necessary
 		if ($requireSectionCreationHtml = $this->requireSectionCreation ()) {
@@ -1871,6 +1881,12 @@ class pureContentEditor
 						" href=\"https://{$this->liveSiteUrl}:{$this->editHostPort}/"	=> ' href=\"/',	// Workaround for Editor port reassignment bug
 					);
 					
+					# Determine bodyClass values
+					$classes = array ();
+					$classes[] = 'editorwindowstyle';
+					if ($this->bodyAttributes) {$classes[] = pureContent::bodyAttributesClass ();}
+					if ($this->bodyClassExtra) {$classes[] = $this->bodyClassExtra;}
+					
 					# Create the richtext field
 					$form->richtext (array (
 						'name'							=> 'content',
@@ -1887,7 +1903,7 @@ class pureContentEditor
 						'height'						=> $this->richtextEditorHeight,
 						'config.contentsCss'			=> $this->richtextEditorEditorAreaCSS,	// Or array of stylesheets
 						'config.bodyId'					=> ($this->bodyAttributes ? pureContent::bodyAttributesId () : false),
-						'config.bodyClass'				=> ($this->bodyAttributes ? pureContent::bodyAttributesClass () . ' editorwindowstyle' : false),
+						'config.bodyClass'				=> implode (' ', $classes),
 						'allowCurlyQuotes'				=> $this->allowCurlyQuotes,
 						'protectEmailAddresses'			=> $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
 						'externalLinksTarget'			=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
@@ -1902,12 +1918,13 @@ class pureContentEditor
 		}
 		
 		# Select the administrator to e-mail
+		$userIsSingleAdministrator = ($this->userIsAdministrator && (count ($this->administrators) == 1));
 		$form->select (array (
-		    'name'            => 'administrators',
-		    'values'            => $this->administratorSelectionList ($enableNoneOption = $this->userCanMakeFilesLiveDirectly),
-		    'title'                    => 'Administrator to inform',
-		    'required'        => 1,
-			'default' => ($this->userCanMakeFilesLiveDirectly ? '_none' : '_all'),
+		    'name'		=> 'administrators',
+		    'values'	=> $this->administratorSelectionList ($enableNoneOption = $userIsSingleAdministrator),
+		    'title'		=> 'Administrator to inform',
+		    'required'	=> 1,
+			'default'	=> ($userIsSingleAdministrator ? '_none' : '_all'),
 		));
 		
 		# Allow administrators to make live directly
@@ -2006,19 +2023,34 @@ class pureContentEditor
 		
 		# Define default read-only rights
 		$defaultRights = array (
-			'role' => '*',
-			'resourceType' => '*',
-			'folder' => '/',
+			'role'					=> '*',
+			'resourceType'			=> '*',
+			'folder'				=> '/',
 			
-			'folderView' => true,
-			'folderCreate' => false,
-			'folderRename' => false,
-			'folderDelete' => false,
+			# CKFinder v2 format
+			'folderView'			=> true,
+			'folderCreate'			=> false,
+			'folderRename'			=> false,
+			'folderDelete'			=> false,
 			
-			'fileView' => true,
-			'fileUpload' => false,
-			'fileRename' => false,
-			'fileDelete' => false,
+			'fileView'				=> true,
+			'fileUpload'			=> false,
+			'fileRename'			=> false,
+			'fileDelete'			=> false,
+			
+			# CKFinder v3 format
+			'FOLDER_VIEW'			=> true,
+			'FOLDER_CREATE'			=> false,
+			'FOLDER_RENAME'			=> false,
+			'FOLDER_DELETE'			=> false,
+			
+			'FILE_VIEW'				=> true,
+			'FILE_CREATE'			=> false,
+			'FILE_RENAME'			=> false,
+			'FILE_DELETE'			=> false,
+			
+			'IMAGE_RESIZE'			=> false,
+			'IMAGE_RESIZE_CUSTOM'	=> false,
 		);
 		
 		# Loop through each permission
@@ -2045,19 +2077,34 @@ class pureContentEditor
 			
 			# Add this permission
 			$cKFinderAccessControl[$location] = array (
-				'role' => '*',
-				'resourceType' => '*',
-				'folder' => $location,
+				'role'					=> '*',
+				'resourceType'			=> '*',
+				'folder'				=> $location,
 				
-				'folderView' => true,
-				'folderCreate' => $treeRights,
-				'folderRename' => false,	// This is a broken model - it works differently to the Unix model, which means that renaming only applies to contained items, not the container itself plus tree
-				'folderDelete' => false,	// Ditto broken model
+				# CKFinder v2 format
+				'folderView'			=> true,
+				'folderCreate'			=> $treeRights,
+				'folderRename'			=> false,	// This is a broken model - it works differently to the Unix model, which means that renaming only applies to contained items, not the container itself plus tree
+				'folderDelete'			=> false,	// Ditto broken model
 				
-				'fileView' => true,
-				'fileUpload' => true,
-				'fileRename' => true,
-				'fileDelete' => true,
+				'fileView'				=> true,
+				'fileUpload'			=> true,
+				'fileRename'			=> true,
+				'fileDelete'			=> true,
+				
+				# CKFinder v3 format
+				'FOLDER_VIEW'			=> true,
+				'FOLDER_CREATE'			=> $treeRights,
+				'FOLDER_RENAME'			=> false,	// This is a broken model - it works differently to the Unix model, which means that renaming only applies to contained items, not the container itself plus tree
+				'FOLDER_DELETE'			=> false,	// Ditto broken model
+				
+				'FILE_VIEW'				=> true,
+				'FILE_CREATE'			=> true,
+				'FILE_RENAME'			=> true,
+				'FILE_DELETE'			=> true,
+				
+				'IMAGE_RESIZE'			=> true,
+				'IMAGE_RESIZE_CUSTOM'	=> true,
 			);
 			
 			# If at the top level, deny file addition to force files to be within the structure rather than dumped in the root area
@@ -2081,19 +2128,34 @@ class pureContentEditor
 						
 						# Add child permissions
 						$cKFinderAccessControl[$folder] = array (
-							'role' => '*',
-							'resourceType' => '*',
-							'folder' => $folder,
+							'role'					=> '*',
+							'resourceType'			=> '*',
+							'folder'				=> $folder,
 							
-							'folderView' => true,
-							'folderCreate' => true,
-							'folderRename' => true,
-							'folderDelete' => true,
+							# CKFinder v2 format
+							'folderView'			=> true,
+							'folderCreate'			=> true,
+							'folderRename'			=> true,
+							'folderDelete'			=> true,
 							
-							'fileView' => true,
-							'fileUpload' => true,
-							'fileRename' => true,
-							'fileDelete' => true,
+							'fileView'				=> true,
+							'fileUpload'			=> true,
+							'fileRename'			=> true,
+							'fileDelete'			=> true,
+							
+							# CKFinder v3 format
+							'FOLDER_VIEW'			=> true,
+							'FOLDER_CREATE'			=> true,
+							'FOLDER_RENAME'			=> true,
+							'FOLDER_DELETE'			=> true,
+							
+							'FILE_VIEW'				=> true,
+							'FILE_CREATE'			=> true,
+							'FILE_RENAME'			=> true,
+							'FILE_DELETE'			=> true,
+							
+							'IMAGE_RESIZE'			=> true,
+							'IMAGE_RESIZE_CUSTOM'	=> true,
 						);
 					}
 				}
@@ -2884,7 +2946,6 @@ class pureContentEditor
 		
 		# Change the administrator indication
 		$usersFormatted = array ();
-
 		foreach ($users as $user => $attributes) {
 			$usersFormatted[$user][''] = '';
 			if (!isSet ($attributes['Source']) || (isSet ($attributes['Source']) && ($attributes['Source'] != 'Lookup (database)'))) {
@@ -3299,21 +3360,41 @@ class pureContentEditor
 	# Function to create an administrator userlist
 	private function administratorSelectionList ($enableNoneOption = false, $excludeCurrentUser = true)
 	{
-		# Add all administrators or no administrators if required
+		# Add option for no administrators, if required
 		if ($enableNoneOption) {$users['_none'] = 'Inform no administrators';}
-		$users['_all'] = 'Inform all administrators';
 		
-		# Compile the user list, excluding users with unapproved submissions and/or administrators if necessary
-		foreach ($this->administrators as $user) {
+		# Determine whether there is only a single administrator
+		$singleAdministrator = (count ($this->administrators) == 1);
+		
+		# Add all administrators, which may be only one
+		if ($singleAdministrator) {
 			
-			# Obtain the user credentials
+			# Obtain the user's name
+			$user = $this->administrators[0];
 			$attributes = $this->users[$user];
+			$name = htmlspecialchars ("{$attributes['Forename']} {$attributes['Surname']}");
 			
-			# Skip the current user if necessary
-			if ($excludeCurrentUser && ($user == $this->user)) {continue;}
+			# Show the single administrator, treating this as all
+			$users['_all'] = "Inform administrator ({$name} <{$user}>)";
 			
-			# Add the user to the list
-			$users[$user] = "Inform administrator {$attributes['Forename']} {$attributes['Surname']} ($user)";
+		} else {
+			
+			# Start with option for all
+			$users['_all'] = 'Inform all administrators';
+			
+			# Compile the user list, excluding users with unapproved submissions and/or administrators if necessary
+			foreach ($this->administrators as $user) {
+				
+				# Skip the current user if necessary
+				if ($excludeCurrentUser && ($user == $this->user)) {continue;}
+				
+				# Obtain the user's name
+				$attributes = $this->users[$user];
+				$name = htmlspecialchars ("{$attributes['Forename']} {$attributes['Surname']}");
+				
+				# Add the user to the list
+				$users[$user] = "Inform administrator {$name} <{$user}>";
+			}
 		}
 		
 		# Return the userlist
