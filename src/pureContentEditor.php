@@ -100,6 +100,9 @@ class pureContentEditor
 		'richtextEditorToolbarSet' => 'pureContent',	// Desired richtext editor Toolbar set
 		'richtextEditorToolbarSetBasic' => 'BasicLonger',	// Name of the basic editor toolbar set used for submenu file editing
 		'richtextEditorFileBrowser'	=> '/_ckfinder/',	// Path (must have trailing slash) of richtext file browser, or false to disable
+		'richtextAutoembedKey' => false,		// Autoembed API key from IFramely
+		'richtextTemplates' => false,			// Path to templates file
+		'richtextSnippets' => false,		// HTML snippets directory, with each file containing a DocBlock
 		'directoryIndex' => 'index.html',		// Default directory index name
 		'virtualPages'	=> false,		// Regexp location(s) where a page is claimed already to exist but there is no physical file
 		'newPageTemplate' => "\n<h1>%title</h1>\n<p>Content starts here</p>",	// Default directory index file contents
@@ -165,7 +168,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.8';
+	private $version = '1.9.9';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1233,21 +1236,12 @@ class pureContentEditor
 			),
 			
 			'submenu' => array (
-				'title' => 'Submenu',
+				'title' => 'Section menu',
 				'tooltip' => 'Edit or create the menu for this section',
 				'url' => $submenuLocation . '?submenu',
 				'administratorsOnly' => false,
 				'grouping' => 'Navigation',
 				'check' => ((bool) ($submenuLocation) && $this->userHasPageCreationRights ($submenuLocation)),
-			),
-			
-			'sidebar' => array (
-				'title' => 'Sidebar',
-				'tooltip' => 'Edit or create a sidebar item visible on all pages in this section',
-				'url' => $this->currentDirectory . $this->pureContentSidebarFile . '?sidebar',
-				'administratorsOnly' => false,
-				'grouping' => 'Navigation',
-				'check' => $this->userHasPageCreationRights ($this->page, $ignoreRootCheck = true),
 			),
 			
 			'headerimage' => array (
@@ -1257,6 +1251,15 @@ class pureContentEditor
 				'administratorsOnly' => false,
 				'grouping' => 'Navigation',
 				'check' => $this->enableHeaderImages && $this->userHasPageCreationRights ($this->page, $ignoreRootCheck = true),
+			),
+			
+			'sidebar' => array (
+				'title' => 'In-page sidebar',
+				'tooltip' => 'Edit or create a sidebar item visible on all pages in this section',
+				'url' => $this->currentDirectory . $this->pureContentSidebarFile . '?sidebar',
+				'administratorsOnly' => false,
+				'grouping' => 'Navigation',
+				'check' => $this->userHasPageCreationRights ($this->page, $ignoreRootCheck = true),
 			),
 			
 			'myAreas' => array (
@@ -1781,7 +1784,10 @@ class pureContentEditor
 			'submitButtonText' => 'Submit page for approval' . ($this->userCanMakeFilesLiveDirectly ? ' / Make live' : ''),
 			'formCompleteText' => false,
 			'nullText' => 'Select which administrator to inform of this submission:',
-			// 'unsavedDataProtection' => true, // Seemingly has no effect on the richtext area unfortunately
+			'richtextAutoembedKey' => $this->richtextAutoembedKey,
+			'richtextTemplates' => $this->richtextTemplates,			// Path to templates file
+			'richtextSnippets' => $this->richtextSnippets (),
+			'unsavedDataProtection' => true,
 		));
 		
 		# Add a reminder when in blog mode
@@ -2005,6 +2011,53 @@ class pureContentEditor
 		
 		# Return the HTML
 		return $html;
+	}
+	
+	
+	# Function to parse a directory for snippets
+	private function richtextSnippets ()
+	{
+		# End if none
+		if (!$this->richtextSnippets) {return array ();}
+		
+		# Scan the directory
+		$files = directories::listFiles ($this->richtextSnippets, $supportedFileTypes = array ('php', 'html'), $directoryIsFromRoot = true);
+		
+		# Parse each file for a DocBlock
+		$snippets = array ();
+		foreach ($files as $filename => $attributes) {
+			
+			# Open the file
+			$file = $this->richtextSnippets . $filename;
+			$string = file_get_contents ($file);
+			
+			# Extract the DocBlock
+			if (!preg_match ('|/\*\*(.+?)\*/|s', $string, $matches)) {continue;}
+			
+			# Parse the lines
+			$lines = explode ("\n", trim ($matches[1]));	// Add implied title signifier to start
+			foreach ($lines as $index => $line) {
+				$lines[$index] = preg_replace ('/^\*\s+/', '', trim ($line));	// Remove starting *
+			}
+			
+			# Extract the title
+			$title = $lines[0];
+			
+			# Extract the usage example
+			$example = false;
+			foreach ($lines as $line) {
+				if (preg_match ('/^@example (.+)/', $line, $matches)) {
+					$example = $matches[1];
+				}
+			}
+			if (!$example) {continue;}
+			
+			# Register the snippet
+			$snippets[$title] = $example;
+		}
+		
+		# Return the snippets array
+		return $snippets;
 	}
 	
 	
