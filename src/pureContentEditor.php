@@ -43,7 +43,6 @@
 # Extension to deal with deleting/moving files or even whole folders? - would create major difficulties with integration with redirects etc, however
 # Tighten up matching of ' src=' (currently will match that string outside an img tag)
 # Allow browsing of empty folders - should suggest creating a file
-# Add use of application::getTitleFromFileContents in convertPermission () to get the contents for files
 # Find some way to enable browsing of /foo/bar/[no index.html] where that is a new directory that does not exist on the live site - maybe a mod_rewrite change
 # More control over naming - moving regexp into the settings but disallow _ at the start
 # Ability to add a permission directly when adding a user rather than using two stages (and hence two e-mails)
@@ -108,10 +107,12 @@ class pureContentEditor
 		'newPageTemplate' => "\n<h1>%title</h1>\n<p>Content starts here</p>",	// Default directory index file contents
 		'newPageTemplateDefaultTitle' => "Title goes here",	// What %title normally becomes
 		'newSubmenuTemplate' => "\n<ul>\n\t<li>Bullet-point list</li>\n\t<li>of menu items</li>\n</ul>",	// Default submenu file contents
+		'newTabsTemplate' => "\n<ul>\n\t<li><a href=\"./\">Home</a></li>\n\t<li>Next tab</li>\n</ul>",	// Default tabs file contents
 		'newSidebarTemplate' => "\n<h2>Sidebar title goes here</h2>\n<p>Content starts here</p>",	// Default sidebar file contents
 		'messageSignatureGreeting' => 'Best wishes,',	// Preset text for the e-mail signature to users
 		'pureContentTitleFile' => '.title.txt',	// pureContent title file name
 		'pureContentSubmenuFile' => '.menu.html',	// pureContent submenu file name
+		'pureContentTabsFile' => 'tabs.html',	// pureContent tabs file name
 		'pureContentSidebarFile' => 'sidebar.html',	// pureContent sidebar file name
 		'pureContentHeadermenuFile' => 'headermenu.html',	// pureContent headermenu file name
 		'pureContentFootermenuFile' => 'footermenu.html',	// pureContent footermenu file name
@@ -168,7 +169,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.9';
+	private $version = '1.9.10';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -314,7 +315,7 @@ class pureContentEditor
 		# Get the available actions
 		$this->actions = $this->actions ();
 		
-		# Generate the menu (but do not show it yet, as it could get regenerated)
+		# Generate the menu (but do not show it yet, as it could get regenerated); NB this will reload actions, as well as subsidiary properties such as userCanEditCurrentPage
 		$this->menuHtml = $this->generateMenu ();
 		
 		# Check that the action is allowed; 'live' and 'logout' are special cases as they are not real functions as such
@@ -854,7 +855,7 @@ class pureContentEditor
 			
 			# Organise the lookup users
 			$fields = array ('Forename', 'Surname', 'E-mail', 'Administrator');
-			foreach ($this->lookup as $index => $attributes) {
+			foreach ($this->lookup as $attributes) {
 				if (!isSet ($attributes['Username'])) {continue;}
 				$username = $attributes['Username'];
 				foreach ($fields as $field) {
@@ -908,8 +909,9 @@ class pureContentEditor
 			}
 			
 			# Organise the lookup permissions
-			#!# Currently assumes one permission per user; change this in a later release by allowing an array of permissions per user
-			foreach ($this->lookup as $username => $attributes) {
+			foreach ($this->lookup as $attributes) {
+				if (!isSet ($attributes['Username'])) {continue;}
+				$username = $attributes['Username'];
 				$permission = array ();
 				foreach ($this->permissionsDatabaseFields as $field) {
 					$permission[$field] = (isSet ($attributes[$field]) ? trim ($attributes[$field]) : '');
@@ -1024,7 +1026,7 @@ class pureContentEditor
 	# Function to determine the user's rights overall
 	private function determineRights ($page)
 	{
-		# Determine if the user can make files live directory (further changes below)
+		# Determine if the user can make files live directly (further changes below)
 		$this->userCanMakeFilesLiveDirectly = ($this->userIsAdministrator ? true : false);
 		
 		# Return false if the page is banned
@@ -1045,9 +1047,9 @@ class pureContentEditor
 		# Get the user's rights in detail
 		$rights = $this->matchLocation ($locations, $page, $determineLocationInUse = true);
 		
-		# Determine the exact permission in use
-		$permission = ($this->locationInUse ? "{$this->user}:{$this->locationInUse}" : false);
-		$this->userCanMakeFilesLiveDirectly = ($this->userIsAdministrator ? true : (($permission && isSet ($this->permissions[$permission])) ? $this->permissions[$permission]['Self-approval'] : false));
+		# Determine if the user can make files live directly, based on the permission in use
+		$permissionInUse = ($this->locationInUse ? "{$this->user}:{$this->locationInUse}" : false);
+		$this->userCanMakeFilesLiveDirectly = ($this->userIsAdministrator ? true : (($permissionInUse && isSet ($this->permissions[$permissionInUse])) ? $this->permissions[$permissionInUse]['Self-approval'] : false));
 		
 		# Return the user's rights
 		return $rights;
@@ -1157,7 +1159,10 @@ class pureContentEditor
 		# Menu file, starts with the string contained in $this->pureContentSubmenuFile
 		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentSubmenuFile, $delimiter) . $delimiter, $filename)) {return 'submenuFile';}
 		
-		# Menu file, starts with the string contained in $this->pureContentSidebarFile
+		# Tabs file, starts with the string contained in $this->pureContentTabsFile
+		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentTabsFile, $delimiter) . $delimiter, $filename)) {return 'tabsFile';}
+		
+		# Sidebar file, starts with the string contained in $this->pureContentSidebarFile
 		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentSidebarFile, $delimiter) . $delimiter, $filename)) {return 'sidebarFile';}
 		
 		# Text files
@@ -1251,6 +1256,15 @@ class pureContentEditor
 				'administratorsOnly' => false,
 				'grouping' => 'Navigation',
 				'check' => $this->enableHeaderImages && $this->userHasPageCreationRights ($this->page, $ignoreRootCheck = true),
+			),
+			
+			'tabs' => array (
+				'title' => 'In-page tabs',
+				'tooltip' => 'Edit or create tabs providing links between pages in the same folder',
+				'url' => $this->currentDirectory . $this->pureContentTabsFile . '?tabs',
+				'administratorsOnly' => false,
+				'grouping' => 'Navigation',
+				'check' => $this->userHasPageCreationRights ($this->page, $ignoreRootCheck = true),
 			),
 			
 			'sidebar' => array (
@@ -1725,6 +1739,18 @@ class pureContentEditor
 	}
 	
 	
+	# Function to edit/create the tabs
+	private function tabs ()
+	{
+		# Define an introductory message
+		$introductionHtml  = "\n<p>This will create tabs that you can include within the body of the page.<br />You should create a standard bullet-point list; this will then be displayed horizontally within the page.</p>";
+		$introductionHtml .= "\n<p>Once you have defined the tabs, you can include them by adding the shortcode <tt>[tabs]</tt> in your content, e.g. after the main heading.</p>";
+		
+		# Delegate to editing
+		return $this->edit (NULL, $introductionHtml);
+	}
+	
+	
 	# Function to edit/create the sidebar
 	private function sidebar ()
 	{
@@ -1733,7 +1759,8 @@ class pureContentEditor
 	
 	
 	# Function to edit the page
-	private function edit ()
+	#!# Not clear why first argument is getting a value by default; ideally eliminate this and adjust the tabs() function arguments
+	private function edit ($arg_ignored = NULL, $introductionHtml = false)
 	{
 		# Start the HTML
 		$html = '';
@@ -1773,6 +1800,11 @@ class pureContentEditor
 		if (!preg_match ($delimiter . addcslashes ($regexp, $delimiter) . $delimiter, $pagename) && !array_key_exists ($this->page, $houseStyleFiles)) {
 			$html = "<p class=\"warning\">The pagename you requested " . htmlspecialchars ($pagename) . " is invalid. Please go to <a href=\"{$this->currentDirectory}?newPage\">create a new page</a> again.</p>";
 			return $html;
+		}
+		
+		# Show introduction if required
+		if ($introductionHtml) {
+			$html .= $introductionHtml;
 		}
 		
 		# Create the form itself
@@ -1831,8 +1863,9 @@ class pureContentEditor
 				));
 				break;
 				
-			# For a menu or a normal page
+			# For a submenu, tabs, sidebar, or a normal page
 			case 'submenuFile':
+			case 'tabsFile':
 			case 'sidebarFile':
 			case false:
 			default:
@@ -1846,6 +1879,13 @@ class pureContentEditor
 						$editorToolbarSet = $this->richtextEditorToolbarSetBasic;
 						if (!$this->editableFile) {
 							$contents = $this->newSubmenuTemplate;
+						}
+						break;
+					case 'tabsFile':
+						$this->richtextEditorWidth = 400;
+						$this->richtextEditorHeight = 500;
+						if (!$this->editableFile) {
+							$contents = $this->newTabsTemplate;
 						}
 						break;
 					case 'sidebarFile':
@@ -1935,7 +1975,7 @@ class pureContentEditor
 		
 		# Allow administrators to make live directly
 		if ($this->userCanMakeFilesLiveDirectly) {
-			$makeLiveDirectlyText = 'Make live directly (do not send for moderation)';
+			$makeLiveDirectlyText = 'Make live directly? (do not send for moderation)';
 			$form->checkboxes (array (
 			    'name'			=> 'preapprove',
 			    'values'			=> array ($makeLiveDirectlyText,),
@@ -3981,13 +4021,25 @@ class pureContentEditor
 	
 	
 	# Function to get contents of the title file for a section
+	#!# This needs to have support for $this->lookup to include the names, which would then be looked up by name:area permission key
 	private function getSectionTitle ($location)
 	{
 		# Chop off the * if necessary
-		if (substr ($location, -1) == '*') {$location = substr ($location, 0, -1);}
+		if (substr ($location, -1) == '*') {
+			$location = substr ($location, 0, -1);
+		}
 		
 		# If the location is not a directory, it should be a file, so attempt to get its contents
 		if (substr ($location, -1) != '/') {
+			$file = $this->liveSiteRoot . $location;
+			if (file_exists ($file)) {
+				if (is_readable ($file)) {
+					if ($html = @file_get_contents ($file)) {
+						$title = application::getTitleFromFileContents ($html);
+						return $title;
+					}
+				}
+			}
 			return false;
 		}
 		
@@ -4463,6 +4515,7 @@ class pureContentEditor
 		if ($this->blogMode) {
 			$currentBlogRoot = $this->getCurrentBlogRoot ();
 		}
+		#!# Should say submenu / tabs / etc. in those cases
 		$html .= "<p class=\"success\">The " . ($this->blogMode ? 'blog posting' : 'page') . ' has been approved and is now online, at: ' . ($this->blogMode ? "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$currentBlogRoot}\">{$this->liveSiteUrl}{$currentBlogRoot}</a> or at the posting-specific location of: " : '') . "<a title=\"Link opens in a new window\" target=\"_blank\" href=\"{$this->liveSiteUrl}{$newFileLiveLocationChopped}\">{$this->liveSiteUrl}{$newFileLiveLocationChopped}</a>.</p>";
 		
 		# Mail the user if required
