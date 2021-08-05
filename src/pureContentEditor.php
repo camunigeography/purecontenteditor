@@ -150,7 +150,7 @@ class pureContentEditor
 		'newBlogIndexTemplate' => "<h1>%title</h1>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogIndex ();\n?>",	// Default directory index file contents
 		'newBlogTreeRootTemplate' => "<h1>Blogs</h1>\n\n<p>Welcome to the blogs section!</p>\n<p>The following blogs are available at present:</p>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogList ();\n?>",
 		'lookup'	=> array (),	// Array of areas which people have automatic editing rights rather than being stored by pureContentEditor, as array (username1 => array (Username,Forename,Surname,E-mail,Location and optionally Administrator (as value 1 or 0)), username2...)
-		'bodyAttributes'	=> true, 	// Whether to apply body attributes to the editing area
+		'bodyAttributes'	=> true,	// Whether to apply body attributes to the editing area
 		'bodyClassExtra'	=> false,		// Any additional class to add to the body attributes
 		'charset'							=> 'UTF-8',		# Encoding used in entity conversions; www.joelonsoftware.com/articles/Unicode.html is worth a read
 		'tipsUrl'				=> 'https://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf',	// Location of tip sheet
@@ -169,7 +169,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.9.10';
+	private $version = '1.10.0';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -235,6 +235,7 @@ class pureContentEditor
 		}
 		
 		# Get the current directory for this page
+		#!# Rename to currentFolder, as this is a local path, not a disk directory
 		$this->currentDirectory = $this->directoryOfPage ($this->page);
 		
 		# Get the administrators
@@ -1391,6 +1392,13 @@ class pureContentEditor
 			'review' => array (
 				'title' => 'Review submissions',
 				'tooltip' => 'Review pages which have been edited by users',
+				'administratorsOnly' => true,
+				'grouping' => 'Reviewing',
+			),
+			
+			'archive' => array (
+				'title' => 'Archive versions',
+				'tooltip' => 'View previous versions',
 				'administratorsOnly' => true,
 				'grouping' => 'Reviewing',
 			),
@@ -4993,7 +5001,215 @@ class pureContentEditor
 		# Return the HTML
 		return $html;
 	}
+	
+	
+	# Function to view previsions versions of a page
+	private function archive ()
+	{
+		# Start the HTML
+		$html = '';
+		
+		# End if not enabled
+		if (!$this->archiveReplacedLiveFiles) {
+			$html .= "\n<p class=\"error\">Archiving has not yet been enabled by the system administrator.</p>";
+			return $html;
+		}
+		
+		# Get the file listing
+		$directory = $this->archiveReplacedLiveFiles . $this->currentDirectory;
+		$files = $this->getArchivedFiles ($directory, $this->page);
+		
+		# End if no files
+		if (!$files) {
+			$html .= "\n<p>There are no previous versions.</p>";
+			return $html;
+		}
+		
+		# Show the version if specified
+		$version = (strlen ($_GET['archive']) ? $_GET['archive'] : false);
+		if ($version) {
+			$html .= $this->showArchiveVersion ($version, $files, $directory);
+			return $html;
+		}
+		
+		# Show diff if specified
+		$from = (isSet ($_GET['from']) && strlen ($_GET['from']) ? $_GET['from'] : false);
+		$to   = (isSet ($_GET['to'])   && strlen ($_GET['to'])   ? $_GET['to'] : false);
+		if ($from && $to) {
+			$html .= $this->showArchiveDiff ($from, $to, $files, $directory);
+			return $html;
+		}
+		
+		# Otherwise, show the listing
+		$html .= $this->createArchiveListing ($files);
+		
+		# Return the HTML
+		return $html;
+	}
+	
+	
+	# Function to get archived files
+	private function getArchivedFiles ($directory, $page)
+	{
+		# Get the list
+		if (!$files = directories::listFiles ($directory, $supportedFileTypes = array (), $directoryIsFromRoot = true)) {return array ();}
+		
+		# Determine the page, e.g. index.html
+		$page = basename ($page);
+		
+		# Exclude files
+		foreach ($files as $file => $attributes) {
+			
+			# Filter to files only
+			if ($attributes['type'] != 'file') {
+				unset ($files[$file]);
+				continue;
+			}
+			
+			# Filter to matching page
+			if ($attributes['name'] != $page) {
+				unset ($files[$file]);
+				continue;
+			}
+			
+			# Ensure date extension
+			if (!preg_match ('/^([0-9]{8})-([0-9]{6})$/', $attributes['extension'])) {		// E.g. 20200616-231711
+				unset ($files[$file]);
+				continue;
+			}
+		}
+		
+		# End if no files, following filtering
+		if (!$files) {return array ();}
+		
+		# Sort in date order, most recent first
+		krsort ($files);
+		
+		# Add in generated attributes
+		foreach ($files as $file => $attributes) {
+			$files[$file]['file'] = $directory . $file;
+			$files[$file]['dateSql'] =    date_format (date_create_from_format ('Ymd-His', $attributes['extension']), 'Y-m-d H:i:s');
+			$files[$file]['dateString'] = date_format (date_create_from_format ('Ymd-His', $attributes['extension']), 'H.ia, jS F Y');
+		}
+		
+		# Add current version at start, emulating the structure of the archive files listing
+		$page = basename ($this->page);
+		$files[$page] = array (
+			'name'			=> $page,
+			'file'			=> $this->livePage,
+			'dateSql'		=> 'Current',
+			'dateString'	=> 'Current',
+		);
+		$files = application::array_move_to_start ($files, $page);
+		
+		# Return the list
+		return $files;
+	}
+	
+	
+	# Function to create an archive listing
+	private function createArchiveListing ($files)
+	{
+		# Start a listing
+		$table = array ();
+		
+		# Add each version
+		$i = 0;
+		foreach ($files as $file => $attributes) {
+			$table[] = array (
+				'until'		=> $attributes['dateSql'],
+				'show'		=> '<a href="' . htmlspecialchars ("{$this->page}?{$this->action}={$file}") . '">Show</a>',
+				'compare'	=> "<input type=\"radio\" name=\"from\" value=\"{$file}\"" . ($i == 1 ? ' checked="checked"' : '') . ' />',
+				'to'		=> "<input type=\"radio\" name=\"to\" value=\"{$file}\""   . ($i == 0 ? ' checked="checked"' : '') . ' />'
+			);
+			$i++;
+		}
+		
+		# Render the table
+		$headings = array (
+			'until'		=> 'Until',
+			'show'		=> 'Show',
+			'compare'	=> 'Compare<br />from:',
+			'to'		=> '<br />to:',
+		);
+		$htmlTable = application::htmlTable ($table, $headings, 'lines archive', false, false, $allowHtml = true, false, $addCellClasses = true);
+		
+		# Compile the HTML by surrounding the table with a form
+		$html  = "\n" . '<form action="' . htmlspecialchars ("{$this->page}") . '">';
+		$html .= "\n" . '<input type="hidden" name="' . $this->action . '" value="" />';
+		$html .= "\n" . '<input type="submit" value="Compare selected" />';
+		$html .= "\n" . $htmlTable;
+		$html .= "\n" . '<input type="submit" value="Compare selected" />';
+		$html .= "\n" . '</form>';
+		$html .= "\n" . '<br />';
+		$html .= "\n" . '<p class="comment">Note: This listing will not include any page edits made using systems other than this online web editor.</p>';
+		
+		# Return the HTML
+		return $html;
+	}
+	
+	
+	# Function to show an archive version
+	private function showArchiveVersion ($version, $files, $directory)
+	{
+		# Start the HTML
+		$html = '';
+		
+		# Validate the version
+		if (!isSet ($files[$version])) {
+			application::sendHeader (404);
+			$html = "\n<p>There is no such version.</p>";
+			return $html;
+		}
+		
+		# Load the file
+		$pageContents = file_get_contents ($files[$version]['file']);
+		
+		# Show date
+		$html .= "\n<p>Version of this file until <strong>{$files[$version]['dateString']}</strong>:</p>";
+		
+		# Show the contents
+		$html .= "\n<hr />\n</div>\n\n\n";
+		$html .= $pageContents;
+		$html .= "\n\n\n<div>";
+		
+		# Return the HTML
+		return $html;
+	}
+	
+	
+	# Function to show a diff of versions
+	private function showArchiveDiff ($from, $to, $files, $directory)
+	{
+		# Start the HTML
+		$html = '';
+		
+		# Validate the version
+		if (!isSet ($files[$from]) || !isSet ($files[$to])) {
+			application::sendHeader (404);
+			$html = "\n<p>A specified version was invalid.</p>";
+			return $html;
+		}
+		
+		# Load the files
+		$fromPageContents = file_get_contents ($files[$from]['file']);
+		$toPageContents   = file_get_contents ($files[$to]['file']);
+		
+		# Load diff support
+		require_once ('htmldiff/html_diff.php');
+		$htmlDiff = html_diff ($fromPageContents, $toPageContents);
+		
+		# Show date
+		$html .= "\n<p>Comparing versions of this file from <strong>{$files[$from]['dateString']}</strong> to <strong>{$files[$to]['dateString']}</strong>:</p>";
+		
+		# Show the contents
+		$html .= "\n<hr />\n</div>\n\n\n";
+		$html .= $htmlDiff;
+		$html .= "\n\n\n<div>";
+		
+		# Return the HTML
+		return $html;
+	}
 }
-
 
 ?>
