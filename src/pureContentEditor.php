@@ -114,6 +114,7 @@ class pureContentEditor
 		'pureContentSubmenuFile' => '.menu.html',	// pureContent submenu file name
 		'pureContentTabsFile' => 'tabs.html',	// pureContent tabs file name
 		'pureContentSidebarFile' => 'sidebar.html',	// pureContent sidebar file name
+		'pureContentCarouselFile' => 'header.html',	// pureContent sidebar file name
 		'pureContentHeadermenuFile' => 'headermenu.html',	// pureContent headermenu file name
 		'pureContentFootermenuFile' => 'footermenu.html',	// pureContent footermenu file name
 		'pureContentMenuFile' => '/sitetech/menu.html',	// pureContent menu file name
@@ -169,7 +170,7 @@ class pureContentEditor
 	private $minimumPhpVersion = '5';
 	
 	# Version of this application
-	private $version = '1.10.0';
+	private $version = '1.10.1';
 	
 	# HTML for the menu
 	private $menuHtml = '';
@@ -1166,6 +1167,9 @@ class pureContentEditor
 		# Sidebar file, starts with the string contained in $this->pureContentSidebarFile
 		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentSidebarFile, $delimiter) . $delimiter, $filename)) {return 'sidebarFile';}
 		
+		# Carousel file, starts with the string contained in $this->pureContentCarouselFile
+		if (preg_match ($delimiter . '^' . addcslashes ($this->pureContentCarouselFile, $delimiter) . $delimiter, $filename)) {return 'carouselFile';}
+		
 		# Text files
 		if (preg_match ($delimiter . '\.txt((\.[0-9]{8}-[0-9]{6}\..+)?)$' . $delimiter, $filename)) {return 'txtFile';}
 		
@@ -1257,6 +1261,15 @@ class pureContentEditor
 				'administratorsOnly' => false,
 				'grouping' => 'Navigation',
 				'check' => $this->enableHeaderImages && $this->userHasPageCreationRights ($this->page, $ignoreRootCheck = true),
+			),
+			
+			'carousel' => array (
+				'title' => 'Carousel',
+				'tooltip' => 'Edit carousel file',
+				'url' => $this->currentDirectory . $this->pureContentCarouselFile . '?carousel',
+				'administratorsOnly' => true,
+				'grouping' => 'Navigation',
+				'check' => $this->userHasPageCreationRights ($this->page, $ignoreRootCheck = true),
 			),
 			
 			'tabs' => array (
@@ -1393,14 +1406,15 @@ class pureContentEditor
 				'title' => 'Review submissions',
 				'tooltip' => 'Review pages which have been edited by users',
 				'administratorsOnly' => true,
-				'grouping' => 'Reviewing',
+				'grouping' => 'Review',
 			),
 			
 			'archive' => array (
 				'title' => 'Archive versions',
 				'tooltip' => 'View previous versions',
-				'administratorsOnly' => true,
-				'grouping' => 'Reviewing',
+				'grouping' => 'Review',
+				'administratorsOnly' => false,
+				'check' => 'userCanEditCurrentPage',
 			),
 		);
 		
@@ -1766,6 +1780,13 @@ class pureContentEditor
 	}
 	
 	
+	# Function to edit/create the carousel
+	private function carousel ()
+	{
+		return $this->edit ();
+	}
+	
+	
 	# Function to edit the page
 	#!# Not clear why first argument is getting a value by default; ideally eliminate this and adjust the tabs() function arguments
 	private function edit ($arg_ignored = NULL, $introductionHtml = false)
@@ -1875,6 +1896,7 @@ class pureContentEditor
 			case 'submenuFile':
 			case 'tabsFile':
 			case 'sidebarFile':
+			case 'carouselFile':
 			case false:
 			default:
 				
@@ -1901,6 +1923,11 @@ class pureContentEditor
 						$this->richtextEditorHeight = 500;
 						if (!$this->editableFile) {
 							$contents = $this->newSidebarTemplate;
+						}
+						break;
+					case 'carouselFile':
+						if (!$this->editableFile) {
+							$contents = '';
 						}
 						break;
 					default:
@@ -2009,7 +2036,8 @@ class pureContentEditor
 			if (!$madeLiveOk) {
 				return $html;
 			}
-			$message = "A page has been directly made live at:\n{$this->liveSiteUrl}" . $this->chopDirectoryIndex ($this->page);
+			$message  = "A page has been directly made live at:\n{$this->liveSiteUrl}" . $this->chopDirectoryIndex ($this->page);
+			$message .= "\n\nYou can view the changes at: {$this->editSiteUrl}" . $this->chopDirectoryIndex ($this->page) . '?archive';
 			$subjectSuffix = 'page directly made live';
 		} else {
 			
@@ -5137,7 +5165,7 @@ class pureContentEditor
 		# Compile the HTML by surrounding the table with a form
 		$html  = "\n" . '<form action="' . htmlspecialchars ("{$this->page}") . '">';
 		$html .= "\n" . '<input type="hidden" name="' . $this->action . '" value="" />';
-		$html .= "\n" . '<input type="submit" value="Compare selected" />';
+		$html .= "\n" . '<input type="submit" value="Compare selected" autofocus="autofocus" />';
 		$html .= "\n" . $htmlTable;
 		$html .= "\n" . '<input type="submit" value="Compare selected" />';
 		$html .= "\n" . '</form>';
