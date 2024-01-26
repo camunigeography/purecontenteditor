@@ -170,6 +170,9 @@ class pureContentEditor
 	# Constructor
 	public function __construct ($parameters = array ())
 	{
+		# Clean server globals
+		application::cleanServerGlobals ();
+
 		# Run the setup
 		$html = $this->main ($parameters);
 		
