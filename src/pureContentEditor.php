@@ -3,14 +3,8 @@
 /**
  * A class to create an editing facility on top of a pureContent-enabled site
  * 
- * @package pureContentEditor
- * @license	https://opensource.org/licenses/gpl-license.php GNU Public License
- * @author	{@link https://www.geog.cam.ac.uk/contacts/webmaster.html Martin Lucas-Smith}, University of Cambridge 2004-20
- * @version See $version below
- * 
  * REQUIREMENTS:
  * - PHP should ideally have the Tidy extension compiled/loaded
- * - Requires libraries application.php, csv.php, directories.php, pureContent.php and ultimateForm.php, all available from https://download.geog.cam.ac.uk/projects/
  * - Uses the CKEditor (open source) and CKFinder (requires license purchase) DHTML components - https://ckeditor.com/ - to provide the richtext field
  * - Assumes that the server will supply a username - e.g. using AuthType or the University of Cambridge's Raven service
  * - Requires mod_rewrite enabled in Apache
@@ -192,13 +186,6 @@ class pureContentEditor
 	{
 		# Start the HTML
 		$html = '';
-		
-		# Load required libraries
-		require_once ('application.php');
-		require_once ('csv.php');
-		require_once ('directories.php');
-		require_once ('pureContent.php');
-		require_once ('ultimateForm.php');
 		
 		# State the expected fields from the user and permission databases
 		$this->userDatabaseHeaders = array ('Username' , 'Forename' , 'Surname' , 'E-mail' , 'Administrator');
@@ -5220,7 +5207,7 @@ class pureContentEditor
 		$toPageContents   = file_get_contents ($files[$to]['file']);
 		
 		# Load diff support
-		require_once ('htmldiff/html_diff.php');
+		require_once ('vendor/brownbear/php-html-diff/src/PhpHtmlDiff/lib/html_diff.php');
 		$htmlDiff = html_diff ($fromPageContents, $toPageContents);
 		
 		# Show date
