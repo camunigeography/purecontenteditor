@@ -169,9 +169,6 @@ class pureContentEditor
 	# Specify the minimum version of PHP required
 	private $minimumPhpVersion = '5';
 	
-	# Version of this application
-	private $version = '1.10.1';
-	
 	# HTML for the menu
 	private $menuHtml = '';
 	
@@ -1642,7 +1639,6 @@ class pureContentEditor
 		$html .= "\n" . '<p>This system runs on the <strong>pureContentEditor</strong> software, which has been written by Martin Lucas-Smith, University of Cambridge. It is released under the <a href="https://opensource.org/licenses/gpl-license.php" target="_blank">GNU Public License</a>. The system is free, is installed at your own risk and no support is provided by the author, except where explicitly arranged.</p>';
 		$html .= "\n" . '<p>It makes use of the DHTML editor component <a href="https://ckeditor.com/" target="_blank">CKEditor</a>, which is also licenced under the GPL.</p>';
 		$html .= "\n" . '<p><a href="https://download.geog.cam.ac.uk/projects/purecontenteditor/" target="_blank">Technical documentation and information on new releases</a> on the pureContentEditor software is available.</p>';
-		$html .= "\n<p>This is version <em>{$this->version}</em> of the pureContentEditor.</p>";
 		$html .= "\n" . '</div>';
 		
 		# Return the HTML
