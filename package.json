@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "ckeditor-html5-video": "https://github.com/bahriddin/ckeditor-html5-video",
+    "ckeditor-youtube-plugin": "^2.1.19",
+    "ckeditor4": "4.22.1",
+    "moonocolor": "https://github.com/maartentibau/moonocolor"
+  }
+}

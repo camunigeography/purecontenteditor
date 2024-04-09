@@ -1,0 +1,13 @@
+<?php
+
+# This file should be saved to /sitetech/purecontent/.config.php within your site files
+
+# Settings
+$settings = array (
+	'websiteName'				=> 'Widgets',		// Name preceeding ' website editing facility'
+	'liveSiteRoot'				=> "/var/www/html/{$_SERVER['SERVER_NAME']}",	// Directory where the main site is located
+	'filestoreRoot'				=> "/var/www/pending/{$_SERVER['SERVER_NAME']}",	// Directory where unapproved files are stored
+	'archiveReplacedLiveFiles'	=> '/var/www/archive/{$_SERVER['SERVER_NAME']}',	// Directory for archiving of replaced files
+);
+
+?>

@@ -5,7 +5,7 @@
  * 
  * REQUIREMENTS:
  * - PHP should ideally have the Tidy extension compiled/loaded
- * - Uses the CKEditor (open source) and CKFinder (requires license purchase) DHTML components - https://ckeditor.com/ - to provide the richtext field
+ * - Uses the CKEditor (open source) and CKFinder (requires license purchase) JS components - https://ckeditor.com/ - to provide the richtext field
  * - Assumes that the server will supply a username - e.g. using AuthType or the University of Cambridge's Raven service
  * - Requires mod_rewrite enabled in Apache
  */
@@ -69,97 +69,108 @@
 # Create a class which adds editing functions to the pureContent framework
 class pureContentEditor
 {
-	# Specify available arguments as defaults or as NULL (to represent a required argument)
-	private $parameterDefaults = array (
-		#!# Default needs changing
-		'editHostScheme' => 'http',				// Scheme of the editing site (i.e. http or https)
-		'editHostName' => NULL,					// Hostname of the editing site
-		'editHostPort' => 80,					// Port number of the editing site
-		'liveSiteUrl' => NULL,					// Hostname of the live site
-		'websiteName' => false,					// Name of the website, e.g. 'Department of XYZ' which proceeds 'website editing facility'
-		'liveSiteRoot' => NULL,					// Directory where the main site files are located
-		'filestoreRoot' => NULL,				// Directory where unapproved files are stored
-		'authTypeName' => 'Raven',				// Name of the authorisation system in use (as in %authType username and password)
-		'serverAdministrator' => NULL,			// E-mail of the server administrator
-		'userDatabase' => '/.users.csv',		// User database
-		'permissionsDatabase' => '/.permissions.csv',	// Permissions database
-		'changelog' => '/.changelog.csv',		// Changelog
-		'textareaEditorWidth' => '125',		// Textarea editor width (used only for HTML/PHP mode) as characters
-		'textareaEditorHeight' => '30',		// Textarea editor height (used only for HTML/PHP mode) as characters
-		'richtextEditorWidth' => '100%',		// Richtext editor width in pixels e.g. 400 or percent e.g. '80%'
-		'richtextEditorHeight' => '400px',		// Richtext editor height in pixels e.g. 400 or percent e.g. '80%'
-		'richtextEditorEditorAreaCSS' => array ('/sitetech/global.css', '/sitetech/generic.css'),	# CSS file to use in the editor area
-		'richtextEditorBasePath' => '/_ckeditor/',	// Location of the DHTML editing component files
-		'richtextEditorToolbarSet' => 'pureContent',	// Desired richtext editor Toolbar set
-		'richtextEditorToolbarSetBasic' => 'BasicLonger',	// Name of the basic editor toolbar set used for submenu file editing
-		'richtextEditorFileBrowser'	=> '/_ckfinder/',	// Path (must have trailing slash) of richtext file browser, or false to disable
-		'richtextAutoembedKey' => false,		// Autoembed API key from IFramely
-		'richtextTemplates' => false,			// Path to templates file
-		'richtextSnippets' => false,		// HTML snippets directory, with each file containing a DocBlock
-		'directoryIndex' => 'index.html',		// Default directory index name
-		'virtualPages'	=> false,		// Regexp location(s) where a page is claimed already to exist but there is no physical file
-		'newPageTemplate' => "\n<h1>%title</h1>\n<p>Content starts here</p>",	// Default directory index file contents
-		'newPageTemplateDefaultTitle' => "Title goes here",	// What %title normally becomes
-		'newSubmenuTemplate' => "\n<ul>\n\t<li>Bullet-point list</li>\n\t<li>of menu items</li>\n</ul>",	// Default submenu file contents
-		'newTabsTemplate' => "\n<ul>\n\t<li><a href=\"./\">Home</a></li>\n\t<li>Next tab</li>\n</ul>",	// Default tabs file contents
-		'newSidebarTemplate' => "\n<h2>Sidebar title goes here</h2>\n<p>Content starts here</p>",	// Default sidebar file contents
-		'messageSignatureGreeting' => 'Best wishes,',	// Preset text for the e-mail signature to users
-		'pureContentTitleFile' => '.title.txt',	// pureContent title file name
-		'pureContentSubmenuFile' => '.menu.html',	// pureContent submenu file name
-		'pureContentTabsFile' => 'tabs.html',	// pureContent tabs file name
-		'pureContentSidebarFile' => 'sidebar.html',	// pureContent sidebar file name
-		'pureContentCarouselFile' => 'header.html',	// pureContent sidebar file name
-		'pureContentHeadermenuFile' => 'headermenu.html',	// pureContent headermenu file name
-		'pureContentFootermenuFile' => 'footermenu.html',	// pureContent footermenu file name
-		'pureContentMenuFile' => '/sitetech/menu.html',	// pureContent menu file name
-		'enableHeaderImages' => false,			// Whether to enable the headers functionality
-		'pureContentHeaderImageStore' => '/images/headers/',	// Section image header store
-		'pureContentHeaderImageFilename' => 'header.jpg',	// Section image header filename
-		'pureContentHeaderImageWidth' => false,		// Section image header width, or false for no checking
-		'pureContentHeaderImageHeight' => false,	// Section image header height, or false for no checking
-		'reviewPagesOpenNewWindow' => false,	// Whether pages for review should open in a new window or not
-		'maximumFileAndFolderNameLength' => 25,	// Maximum number of characters for new files and folders
-		'contentNegotiation' => false,			// Whether to switch on content-negotiation semantics when dealing with filenames
-		'forcePagenameIndex' => false,			// Whether to force the basename of a page to be 'index'
-		'minimumUsernameLength' => 3,			// Minimum allowable length of a username
-		'databaseTimestampingMode' => '.old',	// Whether to backup old CSV databases with .old ('.old') or a timestamp (true) or not at all (false)
-		'enableAliasingChecks' => true,			// Whether to enable checks for a server-aliased page if a page is not found
-		'allowIndexAliasOverwriting' => true,	// Whether the system will allow the creation of a page that is being aliased
-		'hideDirectoryNames' => array ('.AppleDouble', 'Network Trash Folder', 'TheVolumeSettingsFolder'), // Directory names to exclude from directory listings
-		'wordwrapViewedSubmittedHtml' => false,	// Whether to wordwrap submitted HTML in the confirmation display (will not affect the file itself)
-		'bannedLocations' => array (),			// List of banned locations where pages/folders cannot be created (even by an administrator) and which will not be listed
-		'technicalFileLocations' => array ('/sitetech/*', '/robots.txt',  '/.htaccess', ),	// List of technical file locations, which are administrator-only
-		'allowPageCreationAtRootLevel' => false,	// Whether to allow page creation at root level (e.g. example.com/page.html )
-		'archiveReplacedLiveFiles' => true,		// Whether to backup files on the live site which have been replaced (either true [put in same location], false [no archiving] or a path
-		'protectEmailAddresses' => true,	// Whether to obfuscate e-mail addresses
-		'externalLinksTarget'	=> '_blank',	// The window target name which will be instanted for external links (as made within the editing system) or false
-		'imageAlignmentByClass'	=> false,		// Replace align="foo" with class="foo" for images
-		'imageConvertAbsolute'	=> false,		// Whether to pre-process the HTML to make images have absolute URLs
-		'logout'	=> false,	// False if there is no logout available from the authentication agent or the location of the page
-		'disableDateLimitation' => false,	// Whether to disable the date limitation functionality
-		'allowNewLocation'		=> true,	// Whether to allow the adminisrator to approve the page at a new location
-		'enablePhpCheck' => true,	// Whether to check for PHP
-		'allImagesRequireAltText'	=> true,	// Whether all images require alt text to be supplied
-		'blogs'			=> '/blogs/*',				// Blog root(s) - an array or single item; if ending with a *, indicates multiple underneath this root [only * currently supported]
-		'newBlogEntryTemplate' => "\n\n\n<h1>%title</h1>\n\n<p>Content starts here</p>",	// Default blog posting file contents
-		'newBlogIndexTemplate' => "<h1>%title</h1>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogIndex ();\n?>",	// Default directory index file contents
-		'newBlogTreeRootTemplate' => "<h1>Blogs</h1>\n\n<p>Welcome to the blogs section!</p>\n<p>The following blogs are available at present:</p>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogList ();\n?>",
-		'lookup'	=> array (),	// Array of areas which people have automatic editing rights rather than being stored by pureContentEditor, as array (username1 => array (Username,Forename,Surname,E-mail,Location and optionally Administrator (as value 1 or 0)), username2...)
-		'bodyAttributes'	=> true,	// Whether to apply body attributes to the editing area
-		'bodyClassExtra'	=> false,		// Any additional class to add to the body attributes
-		'charset'							=> 'UTF-8',		# Encoding used in entity conversions; www.joelonsoftware.com/articles/Unicode.html is worth a read
-		'tipsUrl'				=> 'https://download.geog.cam.ac.uk/projects/purecontenteditor/tips.pdf',	// Location of tip sheet
-		'helpNewWindow'				=> false,	// Whether the help page should open in a new window
-		'makeLiveDefaultChecked' => true,	// Whether the 'make live by default' option should be checked by default
-		'leaveLink'	=> false,		// Whether to add a link for 'leave editing mode'
-		'nofixTag'	=> '<!-- nofix -->',	// Special marker which indicates that the HTML should not be cleaned (or false to disable)
-		'allowCurlyQuotes' => false,	// Whether to allow curly quotes (e.g. from MS Word)
-		'removeComments' => true,	// Whether the richtext editor should remove comments (NB disabling this will leave comment tags relating to WordHTML behind)
-		'nameInEmail' => true,	// Whether e-mail should be formatted as Name <address@domain> or just address@domain
-		'autocomplete' => false,	// Autocomplete data endpoint for adding new users
-		'emailDomain'	=> false,	// E-mail domain, e.g. 'example.com', used for auto-populating of the e-mail address when using autocomplete
-	);
-	
+	# Function to assign defaults additional to the general application defaults
+	private function defaults ()
+	{
+		# Specify available arguments as defaults or as NULL (to represent a required argument)
+		$defaults = array (
+			'editHostScheme' => 'https',				// Scheme of the editing site (i.e. http or https)
+			'editHostName' => $_SERVER['SERVER_NAME'],					// Hostname of the editing site
+			'editHostPort' => 8080,					// Port number of the editing site
+			'liveSiteUrl' => "https://{$_SERVER['SERVER_NAME']}",					// Hostname of the live site
+			'websiteName' => false,					// Name of the website, e.g. 'Department of XYZ' which proceeds 'website editing facility'
+			'liveSiteRoot' => NULL,					// Directory where the main site files are located
+			'filestoreRoot' => NULL,				// Directory where unapproved files are stored
+			'authTypeName' => 'Raven',				// Name of the authorisation system in use (as in %authType username and password)
+			'serverAdministrator' => $_SERVER['SERVER_ADMIN'],			// E-mail of the server administrator
+			'userDatabase' => '/.users.csv',		// User database
+			'permissionsDatabase' => '/.permissions.csv',	// Permissions database
+			'changelog' => '/.changelog.csv',		// Changelog
+			'textareaEditorWidth' => '125',		// Textarea editor width (used only for HTML/PHP mode) as characters
+			'textareaEditorHeight' => '30',		// Textarea editor height (used only for HTML/PHP mode) as characters
+			'richtextEditorWidth' => '100%',		// Richtext editor width in pixels e.g. 400 or percent e.g. '80%'
+			'richtextEditorHeight' => '400px',		// Richtext editor height in pixels e.g. 400 or percent e.g. '80%'
+			'richtextEditorEditorAreaCSS' => array ('/sitetech/global.css', '/sitetech/generic.css'),	# CSS file to use in the editor area
+			'richtextEditorConfigSkin' => 'moonocolor,/sitetech/purecontenteditor/js/lib/moonocolor/',	// See: https://ckeditor.com/cke4/addon/moonocolor and https://ckeditor.com/docs/ckeditor4/latest/api/CKEDITOR_config.html#cfg-skin
+			'richtextEditorBasePath' => '/sitetech/purecontenteditor/js/lib/ckeditor4/',	// Location of the JS editing component files
+			'richtextEditorToolbarSet' => 'pureContent',	// Desired richtext editor Toolbar set
+			'richtextEditorToolbarSetBasic' => 'BasicLonger',	// Name of the basic editor toolbar set used for submenu file editing
+			'richtextEditorFileBrowser'	=> '/sitetech/purecontenteditor/vendor/ckeditor/ckfinder/',	// Path (must have trailing slash) of richtext file browser, or false to disable
+			'richtextEditorPluginPaths' => array (
+				'htmlbuttons'	=> '/sitetech/purecontenteditor/vendor/alfonsoml/htmlbuttons/',
+				'youtube'		=> '/sitetech/purecontenteditor/js/lib/ckeditor-youtube-plugin/youtube/',
+				'html5video'	=> '/sitetech/purecontenteditor/js/lib/ckeditor-html5-video/html5video/',
+			),		// See: https://ckeditor.com/docs/ckeditor4/latest/api/CKEDITOR_plugins.html#method-addExternal
+			'richtextAutoembedKey' => false,		// Autoembed API key from IFramely
+			'richtextTemplates' => false,			// Path to templates file
+			'richtextSnippets' => false,		// HTML snippets directory, with each file containing a DocBlock
+			'directoryIndex' => 'index.html',		// Default directory index name
+			'virtualPages'	=> false,		// Regexp location(s) where a page is claimed already to exist but there is no physical file
+			'newPageTemplate' => "\n<h1>%title</h1>\n<p>Content starts here</p>",	// Default directory index file contents
+			'newPageTemplateDefaultTitle' => "Title goes here",	// What %title normally becomes
+			'newSubmenuTemplate' => "\n<ul>\n\t<li>Bullet-point list</li>\n\t<li>of menu items</li>\n</ul>",	// Default submenu file contents
+			'newTabsTemplate' => "\n<ul>\n\t<li><a href=\"./\">Home</a></li>\n\t<li>Next tab</li>\n</ul>",	// Default tabs file contents
+			'newSidebarTemplate' => "\n<h2>Sidebar title goes here</h2>\n<p>Content starts here</p>",	// Default sidebar file contents
+			'messageSignatureGreeting' => 'Best wishes,',	// Preset text for the e-mail signature to users
+			'pureContentTitleFile' => '.title.txt',	// pureContent title file name
+			'pureContentSubmenuFile' => '.menu.html',	// pureContent submenu file name
+			'pureContentTabsFile' => 'tabs.html',	// pureContent tabs file name
+			'pureContentSidebarFile' => 'sidebar.html',	// pureContent sidebar file name
+			'pureContentCarouselFile' => 'header.html',	// pureContent sidebar file name
+			'pureContentHeadermenuFile' => 'headermenu.html',	// pureContent headermenu file name
+			'pureContentFootermenuFile' => 'footermenu.html',	// pureContent footermenu file name
+			'pureContentMenuFile' => '/sitetech/menu.html',	// pureContent menu file name
+			'enableHeaderImages' => false,			// Whether to enable the headers functionality
+			'pureContentHeaderImageStore' => '/images/headers/',	// Section image header store
+			'pureContentHeaderImageFilename' => 'header.jpg',	// Section image header filename
+			'pureContentHeaderImageWidth' => false,		// Section image header width, or false for no checking
+			'pureContentHeaderImageHeight' => false,	// Section image header height, or false for no checking
+			'reviewPagesOpenNewWindow' => false,	// Whether pages for review should open in a new window or not
+			'maximumFileAndFolderNameLength' => 25,	// Maximum number of characters for new files and folders
+			'contentNegotiation' => false,			// Whether to switch on content-negotiation semantics when dealing with filenames
+			'forcePagenameIndex' => false,			// Whether to force the basename of a page to be 'index'
+			'minimumUsernameLength' => 3,			// Minimum allowable length of a username
+			'databaseTimestampingMode' => '.old',	// Whether to backup old CSV databases with .old ('.old') or a timestamp (true) or not at all (false)
+			'enableAliasingChecks' => true,			// Whether to enable checks for a server-aliased page if a page is not found
+			'allowIndexAliasOverwriting' => true,	// Whether the system will allow the creation of a page that is being aliased
+			'hideDirectoryNames' => array ('.AppleDouble', 'Network Trash Folder', 'TheVolumeSettingsFolder'), // Directory names to exclude from directory listings
+			'wordwrapViewedSubmittedHtml' => false,	// Whether to wordwrap submitted HTML in the confirmation display (will not affect the file itself)
+			'bannedLocations' => array (),			// List of banned locations where pages/folders cannot be created (even by an administrator) and which will not be listed
+			'technicalFileLocations' => array ('/sitetech/*', '/robots.txt',  '/.htaccess', ),	// List of technical file locations, which are administrator-only
+			'allowPageCreationAtRootLevel' => false,	// Whether to allow page creation at root level (e.g. example.com/page.html )
+			'archiveReplacedLiveFiles' => true,		// Whether to backup files on the live site which have been replaced (either true [put in same location], false [no archiving] or a path
+			'protectEmailAddresses' => true,	// Whether to obfuscate e-mail addresses
+			'externalLinksTarget'	=> '_blank',	// The window target name which will be instanted for external links (as made within the editing system) or false
+			'imageAlignmentByClass'	=> false,		// Replace align="foo" with class="foo" for images
+			'imageConvertAbsolute'	=> false,		// Whether to pre-process the HTML to make images have absolute URLs
+			'logout'	=> '/logout.html',	// False if there is no logout available from the authentication agent or the location of the page
+			'disableDateLimitation' => false,	// Whether to disable the date limitation functionality
+			'allowNewLocation'		=> true,	// Whether to allow the adminisrator to approve the page at a new location
+			'enablePhpCheck' => true,	// Whether to check for PHP
+			'allImagesRequireAltText'	=> true,	// Whether all images require alt text to be supplied
+			'blogs'			=> '/blogs/*',				// Blog root(s) - an array or single item; if ending with a *, indicates multiple underneath this root [only * currently supported]
+			'newBlogEntryTemplate' => "\n\n\n<h1>%title</h1>\n\n<p>Content starts here</p>",	// Default blog posting file contents
+			'newBlogIndexTemplate' => "<h1>%title</h1>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogIndex ();\n?>",	// Default directory index file contents
+			'newBlogTreeRootTemplate' => "<h1>Blogs</h1>\n\n<p>Welcome to the blogs section!</p>\n<p>The following blogs are available at present:</p>\n\n<?php\nrequire_once ('pureContentBlogs.php');\necho pureContentBlogs::blogList ();\n?>",
+			'lookup'	=> false,	// Callback returning areas for which people have automatic editing rights rather than being stored by pureContentEditor, as array (username1 => array (Username,Forename,Surname,E-mail,Location and optionally Administrator (as value 1 or 0)), username2...)
+			'bodyAttributes'	=> true,	// Whether to apply body attributes to the editing area
+			'bodyClassExtra'	=> false,		// Any additional class to add to the body attributes
+			'charset'							=> 'UTF-8',		# Encoding used in entity conversions; www.joelonsoftware.com/articles/Unicode.html is worth a read
+			'helpNewWindow'				=> false,	// Whether the help page should open in a new window
+			'makeLiveDefaultChecked' => true,	// Whether the 'make live by default' option should be checked by default
+			'leaveLink'	=> false,		// Whether to add a link for 'leave editing mode'
+			'nofixTag'	=> '<!-- nofix -->',	// Special marker which indicates that the HTML should not be cleaned (or false to disable)
+			'allowCurlyQuotes' => false,	// Whether to allow curly quotes (e.g. from MS Word)
+			'removeComments' => true,	// Whether the richtext editor should remove comments (NB disabling this will leave comment tags relating to WordHTML behind)
+			'nameInEmail' => true,	// Whether e-mail should be formatted as Name <address@domain> or just address@domain
+			'autocomplete' => false,	// Autocomplete data endpoint for adding new users
+			'emailDomain'	=> false,	// E-mail domain, e.g. 'example.com', used for auto-populating of the e-mail address when using autocomplete
+		);
+		
+		# Return the defaults
+		return $defaults;
+	}
+
 	# Specify the minimum version of PHP required
 	private $minimumPhpVersion = '5';
 	
@@ -168,13 +179,13 @@ class pureContentEditor
 	
 	
 	# Constructor
-	public function __construct ($parameters = array ())
+	public function __construct ($settings = array ())
 	{
 		# Clean server globals
 		application::cleanServerGlobals ();
-
+		
 		# Run the setup
-		$html = $this->main ($parameters);
+		$html = $this->main ($settings);
 		
 		# Enclose the entire application within a div to assist CSS styling
 		$html = "\n" . '<div id="purecontenteditor">' . $html . "\n" . '</div>';
@@ -185,7 +196,7 @@ class pureContentEditor
 	
 	
 	# Main function
-	private function main ($parameters)
+	private function main ($settings)
 	{
 		# Start the HTML
 		$html = '';
@@ -198,7 +209,7 @@ class pureContentEditor
 		$this->user = (isSet ($_SERVER['REMOTE_USER']) ? $_SERVER['REMOTE_USER'] : NULL);
 		
 		# Ensure the setup is OK
-		if ($errorsHtml = $this->setup ($parameters)) {
+		if ($errorsHtml = $this->setup ($settings)) {
 			$html .= $errorsHtml;
 			return $html;
 		}
@@ -334,17 +345,18 @@ class pureContentEditor
 	
 	
 	# Function to setup the application
-	private function setup ($parameters)
+	private function setup ($settings)
 	{
 		# Start a container for HTML errors
 		$errorsHtml = '';
 		
 		# Check that all required arguments have been supplied, import supplied arguments and assign defaults
-		foreach ($this->parameterDefaults as $parameter => $defaultValue) {
-			if ((is_null ($defaultValue)) && (!isSet ($parameters[$parameter]))) {
+		$defaults = $this->defaults ();
+		foreach ($defaults as $parameter => $defaultValue) {
+			if ((is_null ($defaultValue)) && (!isSet ($settings[$parameter]))) {
 				$setupErrors[] = "No '{$parameter}' has been supplied in the settings. This must be fixed by the administrator before this facility will work.";
 			}
-			$this->{$parameter} = (isSet ($parameters[$parameter]) ? $parameters[$parameter] : $defaultValue);
+			$this->{$parameter} = (isSet ($settings[$parameter]) ? $settings[$parameter] : $defaultValue);
 		}
 		
 		# Ensure the version of PHP is supported
@@ -364,12 +376,14 @@ class pureContentEditor
 			$hostAndPort = explode (':', $_SERVER['HTTP_HOST']);
 			$httpHost = $hostAndPort[0];
 		}
-		if (($_SERVER['_SERVER_PROTOCOL_TYPE'] != $this->editHostScheme) || ($this->editHostName != $httpHost) || ($_SERVER['SERVER_PORT'] != $this->editHostPort)) {$setupErrors[] = 'The editing facility must be run from the URL specified in the settings.';}
+		if (($_SERVER['_SERVER_PROTOCOL_TYPE'] != $this->editHostScheme) || ($httpHost != $this->editHostName) || ($_SERVER['SERVER_PORT'] != $this->editHostPort)) {
+			$setupErrors[] = 'The editing facility must be run from the URL specified in the settings.';
+		}
 		
 		# Check that the server is defining a remote user
 		if (!$this->user) {
 			
-			# Attempt to get a login from the front page of the site - sometimes the requested area may simply be set to "Allow from XXX" on the public side, which takes priority
+			# Attempt to get a login from the front page of the site - sometimes the requested area may simply be set to "Require host XXX" on the public side, which takes priority
 			if (($_SERVER['REQUEST_URI'] != '/') && (!preg_match ('@^/\?returnto=@', $_SERVER['REQUEST_URI']))) {
 				$redirectTo = "{$this->editSiteUrl}/?returnto=" . urlencode ($_SERVER['REQUEST_URI']);
 				application::sendHeader (302, $redirectTo);
@@ -454,8 +468,13 @@ class pureContentEditor
 		$this->userDatabase = $this->filestoreRoot . $this->userDatabase;
 		$this->permissionsDatabase = $this->filestoreRoot . $this->permissionsDatabase;
 		
-		# Ensure any lookup is an array
-		$this->lookup = application::ensureArray ($this->lookup);
+		# Get lookup data from callback (or empty array)
+		if ($this->lookup) {
+			$callbackFunction = $this->lookup;
+			$this->lookup = $callbackFunction ();
+		} else {
+			$this->lookup = array ();
+		}
 		
 		# Ensure the permissions database exists, by creating it if it doesn't exist or is an empty file
 		if (!file_exists ($this->permissionsDatabase) || !filesize ($this->permissionsDatabase)) {
@@ -714,7 +733,7 @@ class pureContentEditor
 			);
 		}
 		
-		# Replacement of legacy image class with a similarly-named align attribute (if imageAlignmentByClass is enabled, then this is then reversed afterwards - this is so that the DHTML editor picks up the alignment correctly
+		# Replacement of legacy image class with a similarly-named align attribute (if imageAlignmentByClass is enabled, then this is then reversed afterwards - this is so that the JS editor picks up the alignment correctly
 		$replacements += array (
 			'<img([^>]*) class="(left|center|right)"([^>]*)>' => '<img$1 align="$2"$3>',
 			'<img([^>]*) class="(centre)"([^>]*)>' => '<img$1 align="center"$3>',
@@ -1619,7 +1638,7 @@ class pureContentEditor
 		$html .= "\n<p>Welcome to the pureContentEditor! Use of this system is intended to be largely self-explanatory: you can browse around the site as normal, and perform various actions using the menu buttons above.</p>";
 		$html .= "\n<p>When you are finished, please use the 'Log out' button in the menu above, to protect the integrity of your account.</p>";
 		$html .= "\n<h2>Tips</h2>";
-		$html .= "\n" . "<p><a href=\"{$this->tipsUrl}\" target=\"_blank\"><strong>Help/tips on using the editor</strong></a> are available.</p>";
+		$html .= "\n" . "<p><a href=\"/sitetech/purecontenteditor/help.pdf\" target=\"_blank\"><strong>Help/tips on using the editor</strong></a> are available.</p>";
 		$html .= "\n<h2>Richtext editor user guide</h2>";
 		$html .= "\n" . "<p>There is also a comprehensive <a href=\"https://docs-old.ckeditor.com/CKEditor_3.x/Users_Guide\" target=\"_blank\">user guide for the Microsoft Word-style editor part</a> of the system (the richtext editor).</p>";
 		$html .= "\n" . "<p>The HTML submitted in a richtext field will be cleaned on submission. If you don't want this to happen, go into source mode, and add to the <strong>start</strong>, the following: " . htmlspecialchars ($this->nofixTag) . '</p>';
@@ -1627,8 +1646,8 @@ class pureContentEditor
 		$html .= "\n<p>To get help on use of the system, <a href=\"{$this->page}?message\">contact an administrator</a> of the system.</p>";
 		$html .= "\n<h2>About</h2>";
 		$html .= "\n" . '<p>This system runs on the <strong>pureContentEditor</strong> software, which has been written by Martin Lucas-Smith, University of Cambridge. It is released under the <a href="https://opensource.org/licenses/gpl-license.php" target="_blank">GNU Public License</a>. The system is free, is installed at your own risk and no support is provided by the author, except where explicitly arranged.</p>';
-		$html .= "\n" . '<p>It makes use of the DHTML editor component <a href="https://ckeditor.com/" target="_blank">CKEditor</a>, which is also licenced under the GPL.</p>';
-		$html .= "\n" . '<p><a href="https://download.geog.cam.ac.uk/projects/purecontenteditor/" target="_blank">Technical documentation and information on new releases</a> on the pureContentEditor software is available.</p>';
+		$html .= "\n" . '<p>It makes use of the JS editor component <a href="https://ckeditor.com/" target="_blank">CKEditor</a>, which is also licenced under the GPL.</p>';
+		$html .= "\n" . '<p><a href="https://github.com/camunigeography/purecontenteditor/" target="_blank">Technical documentation and information on new releases</a> on the pureContentEditor software is available.</p>';
 		$html .= "\n" . '</div>';
 		
 		# Return the HTML
@@ -1968,9 +1987,11 @@ class pureContentEditor
 						'editorFileBrowserACL'			=> $this->cKFinderAccessControl (),	// Access Control List (ACL) passed to CKFinder in the format it requires
 						'width'							=> $this->richtextEditorWidth,
 						'height'						=> $this->richtextEditorHeight,
+						'editorPluginPaths'				=> $this->richtextEditorPluginPaths,
 						'config.contentsCss'			=> $this->richtextEditorEditorAreaCSS,	// Or array of stylesheets
 						'config.bodyId'					=> ($this->bodyAttributes ? pureContent::bodyAttributesId () : false),
 						'config.bodyClass'				=> implode (' ', $classes),
+						'config.skin'					=> $this->richtextEditorConfigSkin,
 						'allowCurlyQuotes'				=> $this->allowCurlyQuotes,
 						'protectEmailAddresses'			=> $this->protectEmailAddresses,	// Whether to obfuscate e-mail addresses
 						'externalLinksTarget'			=> $this->externalLinksTarget,		// The window target name which will be instanted for external links (as made within the editing system) or false
@@ -2364,7 +2385,7 @@ class pureContentEditor
 					
 					# Confirm success
 					$link = $this->liveSiteUrl . $this->chopDirectoryIndex ($this->page);
-					$html  = "\n<p><img src=\"/images/general/tick.gif\" alt=\"Tick\" border=\"0\"> The new header image has been added to the live site.</p>";
+					$html  = "\n<p><img src=\"/sitetech/purecontenteditor/images/tick.gif\" alt=\"Tick\" border=\"0\"> The new header image has been added to the live site.</p>";
 					$html .= "\n<p>View the <a target=\"_blank\" href=\"" . $link . "\">front page of this section, showing the new header</a>, in a new window.</p>";
 					$html .= "\n<p><a target=\"_blank\" href=\"{$link}\"><img src=\"{$newLocation}\" alt=\"Header image\" border=\"0\" /></a></p>";
 					$html .= "\n<br />";
@@ -2415,7 +2436,7 @@ class pureContentEditor
 		
 		# If the 'true' attribute is set then show confirmation
 		if ($this->attribute == 'true') {
-			$html  = "\n<p><img src=\"/images/general/tick.gif\" alt=\"Tick\" border=\"0\"> The image has been successfully uploaded and is shown below. [<a href=\"{$this->currentDirectory}?headerimage\">Add another</a>?]</p>";
+			$html  = "\n<p><img src=\"/sitetech/purecontenteditor/images/tick.gif\" alt=\"Tick\" border=\"0\"> The image has been successfully uploaded and is shown below. [<a href=\"{$this->currentDirectory}?headerimage\">Add another</a>?]</p>";
 			$html .= "\n<p><strong>Select it below to confirm that you wish to use it for this section.</strong></p>";
 			return $html;
 		}

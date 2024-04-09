@@ -1,0 +1,31 @@
+#purecontenteditor, #purecontenteditor p, #purecontenteditor input, #purecontenteditor textarea, #purecontenteditor option, #purecontenteditor select {font-family: verdana, arial, helvetica, sans-serif; font-size: 1em;}
+#purecontenteditor input, #purecontenteditor textarea, #purecontenteditor option, #purecontenteditor select, #purecontenteditor label {color: #603;}
+#purecontenteditor table tr:hover {background-color: #fbfdff;}
+#purecontenteditor {font-size: 82%;}
+#purecontenteditor pre {font-size: 1em;}
+#purecontenteditor p.success {background: url(/sitetech/purecontenteditor/images/tick.gif) no-repeat top left; padding-left: 17px; color: green;}
+#purecontenteditor p.failure {background: url(/sitetech/purecontenteditor/images/cross.gif) no-repeat top left; padding-left: 17px; color: red;}
+#purecontenteditor p.information, #purecontenteditor p.warning {margin: 10px 0; padding-left: 19px;}
+#purecontenteditor p.information {background: url(/sitetech/purecontenteditor/images/information.png) no-repeat top left; }
+#purecontenteditor p.warning {color: red; background: url(/sitetech/purecontenteditor/images/alert.gif) no-repeat top left; }
+#purecontenteditor #administration {border: 1px solid #ccc; padding: 10px; margin-bottom: 15px;}
+#purecontenteditor #administration p em {font-style: normal;}
+#purecontenteditor #administration ul, #purecontenteditor #administration p {margin: 0; padding: 0;}
+#purecontenteditor #administration ul li {list-style-type: none; line-height: 1.6em; text-align: left;}
+#purecontenteditor #administration img.extension {display: none;}
+#purecontenteditor #administration ul li a {white-space: nowrap; color: #444; padding: 2px 5px; border: 1px solid #bbb; border-width: 0 1px; background-color: #f2f2f2;}
+#purecontenteditor #administration ul li a[target=_blank] {padding-right: 17px; background-position: 95% 60%;}
+#purecontenteditor #administration ul li.selected a {background-color: #936; color: white;}
+#purecontenteditor #administration ul li a:hover {color: black; text-decoration: none; background-color: #f0e1ff; border: 1px solid #6100c1; border-width: 0 1px;}
+#purecontenteditor #administration ul li ul li {display: inline;}
+#container {position: relative;}
+#purecontenteditor ul#administrationtypes {position: relative;}
+#purecontenteditor ul#administrationtypes {margin-top: 5px;}
+#purecontenteditor #administration ul li ul {position: absolute; left: 8em; width: auto; display: inline;}
+#purecontenteditor .ultimateform table {width: 99%;}
+#purecontenteditor table.archive .compare {padding-left: 50px;}
+#purecontenteditor table.archive .to {width: 50px;}
+#purecontenteditorresult {clear: both; margin-top: 1.5em;}
+body #purecontenteditor div.graybox {float: none; width: auto; min-height: auto;}
+
+/* NB add #purecontenteditor {font-size: 1em;} to the main stylesheet when the font-size is already small (e.g. 82%) */

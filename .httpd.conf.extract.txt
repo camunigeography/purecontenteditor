@@ -1,0 +1,79 @@
+# Editing for a pureContent-enabled site
+
+# Load on Apache 2.4 (2.2 is not supported), using:
+#	# pureContentEditor
+#	Include /path/to/purecontenteditor/.httpd.conf.extract.txt
+#	Use MacroPureContentEditor www.example.org /path/to/repo-directory
+
+
+<Macro MacroPureContentEditor $hostname $repoPath>
+	
+	# Alias the bootstrap file to the web space (cannot go within <If> block unfortunately, so a unique URL has been chosen)
+	# This is necessary so that the RewriteRule in the <If> block has a physical file, because of the buggy Apache handling of RewriteRule within <If>; see: https://serverfault.com/questions/1054363/ , https://stackoverflow.com/a/64001979/ , and https://bz.apache.org/bugzilla/show_bug.cgi?id=63262
+	Alias /sitetech/purecontenteditor/index.html $repoPath/index.html
+	
+	# Fix up missing mis-packaged image files
+	RewriteCond %{SERVER_PORT} =8080
+	RewriteRule ^/sitetech/purecontenteditor/js/lib/moonocolor/images/(lock.png|refresh.png)$ $repoPath/js/lib/moonocolor/_projectfiles/source/images/$1 [L]
+	
+	# Add in assets to the web space; this is equivalent to Alias, but Alias cannot go within an <If> block
+	# Ideally this would be within the <If> block, but there is a bug in Apache as noted above
+	RewriteEngine on
+	RewriteCond %{SERVER_PORT} =8080
+	RewriteRule ^/sitetech/purecontenteditor/(images/.+|js/lib/.+|vendor/ckeditor/.+|vendor/alfonsoml/htmlbuttons/.+|help.pdf)$ $repoPath/$1 [L,QSA]
+	
+	# Apply directives only to the editing port
+	<If "%{SERVER_PORT} -eq 8080">
+		
+		# Authentication
+		# Note: Ucam-WebAuth won't work using a ServerAlias site
+		AuthType Ucam-WebAuth
+		AADescription "Site editor"
+		AAForceInteract On
+		Require valid-user
+		AAMaxSessionLife 36000
+		
+		# Logout
+		<If "%{REQUEST_URI} == '/logout.html'">
+			SetHandler AALogout
+		</If>
+		
+		# Enable PHP parsing
+		AddType application/x-httpd-php .html
+		
+		# Rewrite requests to single file, except for the editor files themselves
+		RewriteEngine on
+		# HTML and text files
+		RewriteCond %{REQUEST_URI} !^/sitetech/purecontenteditor/
+		RewriteCond %{REQUEST_URI} !^/logout.html
+		RewriteRule ^(.*)(/|\.html|\.txt)$ /sitetech/purecontenteditor/index.html?$1$2 [L,QSA]
+		RewriteRule ^(([^\?]+)\.[0-9]{8}-[0-9]{6}\.[^\?]+)(\?([a-zA-Z]+))?$ /sitetech/purecontenteditor/index.html?$1 [L,QSA]
+		# CSS and JS files
+		RewriteCond %{REQUEST_URI} !^/sitetech/purecontenteditor/
+		RewriteCond %{REQUEST_URI} !^/logout.html
+		RewriteCond %{QUERY_STRING} !^query$
+		RewriteCond %{QUERY_STRING} ^[a-zA-Z]+$
+		RewriteRule ^(.*)(\.css|\.js)$ /sitetech/purecontenteditor/index.html?$1$2 [L,QSA]
+		RewriteRule ^(([^\?]+)\.[0-9]{8}-[0-9]{6}\.[^\?]+)(\?([a-zA-Z]+))?$ /sitetech/purecontenteditor/index.html?$1 [L,QSA]
+		
+		# Allow file uploads
+		php_admin_flag file_uploads on
+		
+		# Buffer the output to enable page browsing, 302 redirections and 404 not found indications
+		php_value output_buffering 32768
+		
+		# Prevent auto-prepend on image browser
+		<If "%{REQUEST_URI} =~ m#^/sitetech/purecontenteditor/vendor/ckeditor/ckfinder/#">
+			php_admin_value auto_prepend_file none
+			php_admin_value auto_append_file none
+		</If>
+		
+		# XSS protection, due to display of submitted HTML
+		Header set X-XSS-Protection 0
+		
+		# Fix http://host:8080/ -> https://host:8080/
+		ErrorDocument 400 "Please change the web address at the top of your browser to start with https:// - note the 's' in this."
+		
+	</If>
+	
+</Macro>

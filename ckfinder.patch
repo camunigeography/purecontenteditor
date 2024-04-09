@@ -1,0 +1,24 @@
+--- ckfinder.orig/core/connector/php/php5/Utils/FileSystem.php	2019-08-21 10:52:44.000000000 +0100
++++ ckfinder/core/connector/php/php5/Utils/FileSystem.php	2024-04-09 17:21:28.947429756 +0100
+@@ -173,6 +173,10 @@
+ 
+         /*    Scan the dir and recursively unlink    */
+         $files = scandir($path);
++
++# Local patch for pureContentEditor: prevent tree deletion
++$files = false;
++
+         if ($files) {
+             foreach($files as $filename)
+             {
+@@ -329,6 +333,10 @@
+                 array_values($UTF8_UPPER_ACCENTS),
+                 $str
+             );
++
++# Local patch for pureContentEditor: remove spaces and other characters
++$str = preg_replace ('/[^.-_a-z0-9]/', '', strtolower ($str));
++
+         return $str;
+     }
+ 
