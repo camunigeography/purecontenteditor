@@ -6,7 +6,7 @@
 #	Use MacroPureContentEditor www.example.org /path/to/repo-directory
 
 
-<Macro MacroPureContentEditor $hostname $repoPath>
+<Macro MacroPureContentEditor $repoPath>
 	
 	# Alias the bootstrap file to the web space (cannot go within <If> block unfortunately, so a unique URL has been chosen)
 	# This is necessary so that the RewriteRule in the <If> block has a physical file, because of the buggy Apache handling of RewriteRule within <If>; see: https://serverfault.com/questions/1054363/ , https://stackoverflow.com/a/64001979/ , and https://bz.apache.org/bugzilla/show_bug.cgi?id=63262
