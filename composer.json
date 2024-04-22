@@ -19,21 +19,6 @@
                     "classmap": ["."]
                 }
             }
-        },
-        {
-            "type": "package",
-            "package": {
-                "name": "alfonsoml/htmlbuttons",
-                "version": "master",
-                "dist": {
-                     "type": "zip",
-                     "url": "https://download.ckeditor.com/htmlbuttons/releases/htmlbuttons_1.5.2.zip",
-                     "reference": "master"
-                },
-                "autoload": {
-                    "classmap": ["."]
-                }
-            }
         }
     ],
     "require": {
@@ -43,8 +28,7 @@
         "libpurecontent/ultimateform": "^1.29.4",
         "libpurecontent/purecontent": "^1.13.2",
         "brownbear/php-html-diff": "@dev",
-        "ckeditor/ckfinder": "dev-master",
-        "alfonsoml/htmlbuttons": "dev-master"
+        "ckeditor/ckfinder": "dev-master"
     },
     "autoload": {
         "psr-0": {"pureContentEditor": "src/"}

@@ -20,7 +20,7 @@
 	# Ideally this would be within the <If> block, but there is a bug in Apache as noted above
 	RewriteEngine on
 	RewriteCond %{SERVER_PORT} =8080
-	RewriteRule ^/sitetech/purecontenteditor/(images/.+|js/lib/.+|vendor/ckeditor/.+|vendor/alfonsoml/htmlbuttons/.+|help.pdf)$ $repoPath/$1 [L,QSA]
+	RewriteRule ^/sitetech/purecontenteditor/(js/lib/.+|vendor/ckeditor/.+|images/.+|help.pdf)$ $repoPath/$1 [L,QSA]
 	
 	# Apply directives only to the editing port
 	<If "%{SERVER_PORT} -eq 8080">

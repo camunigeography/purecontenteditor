@@ -4,23 +4,8 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c0a39f7071ecfbec69710420a4ea0151",
+    "content-hash": "6ff842051c665efa5fde106a95dc5f8c",
     "packages": [
-        {
-            "name": "alfonsoml/htmlbuttons",
-            "version": "master",
-            "dist": {
-                "type": "zip",
-                "url": "https://download.ckeditor.com/htmlbuttons/releases/htmlbuttons_1.5.2.zip",
-                "reference": "master"
-            },
-            "type": "library",
-            "autoload": {
-                "classmap": [
-                    "."
-                ]
-            }
-        },
         {
             "name": "brownbear/php-html-diff",
             "version": "dev-master",
@@ -871,8 +856,7 @@
     "minimum-stability": "stable",
     "stability-flags": {
         "brownbear/php-html-diff": 20,
-        "ckeditor/ckfinder": 20,
-        "alfonsoml/htmlbuttons": 20
+        "ckeditor/ckfinder": 20
     },
     "prefer-stable": false,
     "prefer-lowest": false,

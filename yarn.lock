@@ -6,6 +6,10 @@
   version "0.0.0"
   resolved "https://github.com/bahriddin/ckeditor-html5-video#15fc6b10c2d8031ffa45824eaeded4314c4a2a86"
 
+"ckeditor-htmlbuttons@https://github.com/AlfonsoML/ckeditor-htmlbuttons":
+  version "0.0.0"
+  resolved "https://github.com/AlfonsoML/ckeditor-htmlbuttons#0984435e395f29af672cae23453641a20a866fe2"
+
 ckeditor-youtube-plugin@^2.1.19:
   version "2.1.19"
   resolved "https://registry.yarnpkg.com/ckeditor-youtube-plugin/-/ckeditor-youtube-plugin-2.1.19.tgz#f6efdd3785fbe29920b944860a36aacc336bf86a"

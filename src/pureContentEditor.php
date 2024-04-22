@@ -97,7 +97,7 @@ class pureContentEditor
 			'richtextEditorToolbarSetBasic' => 'BasicLonger',	// Name of the basic editor toolbar set used for submenu file editing
 			'richtextEditorFileBrowser'	=> '/sitetech/purecontenteditor/vendor/ckeditor/ckfinder/',	// Path (must have trailing slash) of richtext file browser, or false to disable
 			'richtextEditorPluginPaths' => array (
-				'htmlbuttons'	=> '/sitetech/purecontenteditor/vendor/alfonsoml/htmlbuttons/',
+				'htmlbuttons'	=> '/sitetech/purecontenteditor/js/lib/ckeditor-htmlbuttons/',
 				'youtube'		=> '/sitetech/purecontenteditor/js/lib/ckeditor-youtube-plugin/youtube/',
 				'html5video'	=> '/sitetech/purecontenteditor/js/lib/ckeditor-html5-video/html5video/',
 			),		// See: https://ckeditor.com/docs/ckeditor4/latest/api/CKEDITOR_plugins.html#method-addExternal
