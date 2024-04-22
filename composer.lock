@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f154f99689818ccb17fef027b6089a3f",
+    "content-hash": "c0a39f7071ecfbec69710420a4ea0151",
     "packages": [
         {
             "name": "alfonsoml/htmlbuttons",
@@ -323,16 +323,16 @@
         },
         {
             "name": "libpurecontent/purecontent",
-            "version": "v1.13.1",
+            "version": "v1.13.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/libpurecontent/purecontent.git",
-                "reference": "a1d0f9de7d188bfbfc2b6f75489244ce70003569"
+                "reference": "d62f91063e3f326f54a96a86d1857fc93cf3f93b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/libpurecontent/purecontent/zipball/a1d0f9de7d188bfbfc2b6f75489244ce70003569",
-                "reference": "a1d0f9de7d188bfbfc2b6f75489244ce70003569",
+                "url": "https://api.github.com/repos/libpurecontent/purecontent/zipball/d62f91063e3f326f54a96a86d1857fc93cf3f93b",
+                "reference": "d62f91063e3f326f54a96a86d1857fc93cf3f93b",
                 "shasum": ""
             },
             "type": "library",
@@ -353,9 +353,9 @@
             "description": "PHP library pureContent within the pureContent library suite",
             "support": {
                 "issues": "https://github.com/libpurecontent/purecontent/issues",
-                "source": "https://github.com/libpurecontent/purecontent/tree/v1.13.1"
+                "source": "https://github.com/libpurecontent/purecontent/tree/v1.13.2"
             },
-            "time": "2024-01-26T13:26:27+00:00"
+            "time": "2024-04-19T14:22:48+00:00"
         },
         {
             "name": "libpurecontent/timedate",
@@ -395,16 +395,16 @@
         },
         {
             "name": "libpurecontent/ultimateform",
-            "version": "v1.29.4",
+            "version": "v1.29.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/libpurecontent/ultimateform.git",
-                "reference": "bff3cb9cbcaae9656f534761d251c3b7adc2dd55"
+                "reference": "442b39cc03898a106598932f3d967b4e8e65395f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/libpurecontent/ultimateform/zipball/bff3cb9cbcaae9656f534761d251c3b7adc2dd55",
-                "reference": "bff3cb9cbcaae9656f534761d251c3b7adc2dd55",
+                "url": "https://api.github.com/repos/libpurecontent/ultimateform/zipball/442b39cc03898a106598932f3d967b4e8e65395f",
+                "reference": "442b39cc03898a106598932f3d967b4e8e65395f",
                 "shasum": ""
             },
             "require": {
@@ -430,9 +430,9 @@
             "description": "PHP library ultimateForm within the pureContent library suite",
             "support": {
                 "issues": "https://github.com/libpurecontent/ultimateform/issues",
-                "source": "https://github.com/libpurecontent/ultimateform/tree/v1.29.4"
+                "source": "https://github.com/libpurecontent/ultimateform/tree/v1.29.6"
             },
-            "time": "2024-04-10T15:43:56+00:00"
+            "time": "2024-04-18T13:33:17+00:00"
         },
         {
             "name": "pear/console_getopt",
