@@ -34,7 +34,7 @@
         "psr-0": {"pureContentEditor": "src/"}
     },
     "scripts": {
-        "post-update-cmd": [
+        "post-install-cmd": [
             "mv vendor/ckeditor/ckfinder/config.php vendor/ckeditor/ckfinder/config.php.original",
             "ln -s ../../../ckfinder-config.php vendor/ckeditor/ckfinder/config.php",
             "dos2unix vendor/ckeditor/ckfinder/core/connector/php/php5/Utils/FileSystem.php",
