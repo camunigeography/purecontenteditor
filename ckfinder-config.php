@@ -233,7 +233,7 @@ $config['ResourceType'][] = Array (
 		'url' => $baseUrl,
 		'directory' => $baseDir,
 		'maxSize' => 0,
-		'allowedExtensions' => ($type == 'Images' ? 'gif,jpeg,jpg,png,svg' : /* 'htm,' . */ '7z,aiff,asf,avi,bmp,csv,doc,docx,fla,flv,gif,gz,gzip,jpeg,jpg,mid,mov,mp3,mp4,mpc,mpeg,mpg,ods,odt,pdf,png,ppt,pptx,pxd,qt,ram,rar,rm,rmi,rmvb,rtf,sdc,sitd,swf,sxc,sxw,tar,tgz,tif,tiff,txt,vsd,wav,wma,wmv,xls,xlsx,zip' . ',data,f90,html,xml,svg'),
+		'allowedExtensions' => 'old,' . ($type == 'Images' ? 'gif,jpeg,jpg,png,svg' : /* 'htm,' . */ '7z,aiff,asf,avi,bmp,csv,doc,docx,fla,flv,gif,gz,gzip,jpeg,jpg,mid,mov,mp3,mp4,mpc,mpeg,mpg,ods,odt,pdf,png,ppt,pptx,pxd,qt,ram,rar,rm,rmi,rmvb,rtf,sdc,sitd,swf,sxc,sxw,tar,tgz,tif,tiff,txt,vsd,wav,wma,wmv,xls,xlsx,zip' . ',data,f90,html,xml,svg'),
 		'deniedExtensions' => '');
 
 
