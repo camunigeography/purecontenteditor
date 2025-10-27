@@ -68,9 +68,6 @@
 			php_admin_value auto_append_file none
 		</If>
 		
-		# XSS protection, due to display of submitted HTML
-		Header set X-XSS-Protection 0
-		
 		# Fix http://host:8080/ -> https://host:8080/
 		ErrorDocument 400 "Please change the web address at the top of your browser to start with https:// - note the 's' in this."
 		
