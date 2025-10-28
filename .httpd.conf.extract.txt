@@ -13,12 +13,12 @@
 	Alias /sitetech/purecontenteditor/index.html $repoPath/index.html
 	
 	# Fix up missing mis-packaged image files
+	RewriteEngine on
 	RewriteCond %{SERVER_PORT} =8080
 	RewriteRule ^/sitetech/purecontenteditor/js/lib/moonocolor/images/(lock.png|refresh.png)$ $repoPath/js/lib/moonocolor/_projectfiles/source/images/$1 [L]
 	
 	# Add in assets to the web space; this is equivalent to Alias, but Alias cannot go within an <If> block
 	# Ideally this would be within the <If> block, but there is a bug in Apache as noted above
-	RewriteEngine on
 	RewriteCond %{SERVER_PORT} =8080
 	RewriteRule ^/sitetech/purecontenteditor/(js/lib/.+|vendor/ckeditor/.+|images/.+|help.pdf)$ $repoPath/$1 [L,QSA]
 	
