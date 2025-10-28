@@ -2403,6 +2403,10 @@ class pureContentEditor
 			}
 		}
 		
+		# Introduction
+		$html .= "\n<p>In this area, you can set a header image for the current section of the website. This will apply to <strong>all pages</strong> within the section (folder).</p>";
+		$html .= "\n<p>You can select from the gallery of existing header images below, or firstly add a new image to the gallery and then select it.</p>";
+		
 		# Show an image upload form
 		$imageUploadForm = $this->imageUploadForm ($imageStore, $extension, $specificSizeRequired, array_keys ($currentImages));
 		$html .= "\n<div class=\"graybox\">" . $imageUploadForm . "\n</div>";
