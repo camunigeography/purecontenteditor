@@ -125,6 +125,9 @@ class pureContentEditor
 			'pureContentHeaderImageFilename' => 'header.jpg',	// Section image header filename
 			'pureContentHeaderImageWidth' => 883,		// Section image header width
 			'pureContentHeaderImageHeight' => 292,		// Section image header height
+			'pureContentHeaderThumbnailWidth' => 153,	// Section image thumbnail width
+			'pureContentHeaderThumbnailHeight' => 147,	// Section image thumbnail height
+			'pureContentHeaderThumbnailName' => 'thumbnail153',	// Section image thumbnail name, without file extension (which will be.jpg)
 			'reviewPagesOpenNewWindow' => false,	// Whether pages for review should open in a new window or not
 			'maximumFileAndFolderNameLength' => 25,	// Maximum number of characters for new files and folders
 			'contentNegotiation' => false,			// Whether to switch on content-negotiation semantics when dealing with filenames
@@ -2339,7 +2342,7 @@ class pureContentEditor
 	}
 	
 	
-	# Function to change/create header images
+	# Function to change/create header images for a section (header and thumbnail)
 	private function headerimage ()
 	{
 		# Start the HTML
@@ -2441,7 +2444,7 @@ class pureContentEditor
 		}
 		
 		# Describe the restrictions
-		$restrictions = "The image <strong>must</strong> have a <strong>.{$extension} extension</strong>.<br />It will be automatically resized (and centred) to a header of size {$this->pureContentHeaderImageWidth}x{$this->pureContentHeaderImageHeight}.";
+		$restrictions = "The image <strong>must</strong> have a <strong>.{$extension} extension</strong>.<br />It will be automatically resized (and centred) to a header of size {$this->pureContentHeaderImageWidth}x{$this->pureContentHeaderImageHeight} and a thumbnail of size {$this->pureContentHeaderThumbnailWidth}x{$this->pureContentHeaderThumbnailHeight}.";
 		
 		# Create an upload form
 		$form = new form (array (
@@ -2488,9 +2491,15 @@ class pureContentEditor
 			# Move the file, suffixing with -original
 			rename ($imageStore . $uploadedFilename, $imageStore . $result['name'] . '-original.' . $extension);
 			
-			# Create resized (and cropped version); the form regexp has already validated characters to ensure shell security
-			$size = "{$this->pureContentHeaderImageWidth}x{$this->pureContentHeaderImageHeight}";	// E.g. 883x292
-			$command = "convert '{$imageStore}{$result['name']}-original.jpg' -resize {$size}^ -gravity center -extent {$size} '{$imageStore}{$result['name']}.jpg'";	// Use of size^ crops to at least the box but maintaining the aspect ratio; this is then cropped with the extent
+			# Create resized and cropped versions; the form regexp has already validated characters to ensure shell security
+			$sizes = array (
+				'' => "{$this->pureContentHeaderImageWidth}x{$this->pureContentHeaderImageHeight}",	// E.g. 883x292
+				"-{$this->pureContentHeaderThumbnailName}" => "{$this->pureContentHeaderThumbnailWidth}x{$this->pureContentHeaderThumbnailHeight}",	// E.g. 153x147
+			);
+			foreach ($sizes as $filename => $size) {
+				$command = "convert '{$imageStore}{$result['name']}-original.jpg' -resize {$size}^ -gravity center -extent {$size} '{$imageStore}{$result['name']}{$filename}.jpg'";	// Use of size^ crops to at least the box but maintaining the aspect ratio; this is then cropped with the extent
+				exec ($command);
+			}
 			
 			# Refresh the page, which will show the recently-uploaded image at the top
 			$redirectTo = "{$this->currentDirectory}?headerimage=true";
