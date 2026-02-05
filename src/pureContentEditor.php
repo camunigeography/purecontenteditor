@@ -2373,11 +2373,19 @@ class pureContentEditor
 			if (preg_match ($delimiter . '\.' . addcslashes ($extension, $delimiter) . '$' . $delimiter, $this->attribute)) {
 				if (array_key_exists ($this->attribute, $currentImages)) {	// Avoids any hack attempts
 					
-					# Move the image to the right position
+					# Move the header to the right position
 					$currentLocation = $this->attribute;
 					$newLocation = $this->currentDirectory . $this->pureContentHeaderImageFilename;
 					if (!copy ($imageStore . $currentLocation, $this->liveSiteRoot . $newLocation)) {
 						$errorsHtml  = $this->reportErrors ('There was a problem copying the header file to the section.', "The header image \"{$this->attribute}\" could not be copied to {$this->currentDirectory} .");
+						return $errorsHtml;
+					}
+					
+					# Move the thumbnail to the right position
+					$newLocation = $this->currentDirectory . $this->pureContentHeaderThumbnailName . '.jpg';
+					if (!copy ($imageStore . preg_replace ('/\.jpg$/', "-{$this->pureContentHeaderThumbnailName}.jpg", $currentLocation), $this->liveSiteRoot . $newLocation)) {
+						var_dump ($imageStore . preg_replace ('/\.jpg$/', "-{$this->pureContentHeaderThumbnailName}.jpg", $currentLocation), $this->liveSiteRoot . $newLocation);
+						$errorsHtml  = $this->reportErrors ('There was a problem copying the thubnail file to the section.', "The thumbnail image \"{$this->attribute}\" could not be copied to {$this->currentDirectory} .");
 						return $errorsHtml;
 					}
 					
