@@ -2441,7 +2441,7 @@ class pureContentEditor
 		}
 		
 		# Describe the restrictions
-		$restrictions = "The image <strong>must</strong> have a <strong>.{$extension} extension</strong> and must be exactly <strong>{$this->pureContentHeaderImageWidth}px</strong> by <strong>{$this->pureContentHeaderImageHeight}px</strong>.";
+		$restrictions = "The image <strong>must</strong> have a <strong>.{$extension} extension</strong>.<br />It will be automatically resized (and centred) to a header of size {$this->pureContentHeaderImageWidth}x{$this->pureContentHeaderImageHeight}.";
 		
 		# Create an upload form
 		$form = new form (array (
@@ -2485,16 +2485,12 @@ class pureContentEditor
 				return $html;
 			}
 			
-			# Check the size
-			list ($width, $height, $type, $imageSize) = getimagesize ($imageStore . $uploadedFilename);
-			if (($width != $this->pureContentHeaderImageWidth) || ($height != $this->pureContentHeaderImageHeight)) {
-				unlink ($imageStore . $uploadedFilename);
-				$html = "<p class=\"warning\">The image was the wrong size, so the one you selected has not been added. Please <a href=\"{$this->page}?headerimage\">try again</a>.</p>";
-				return $html;
-			}
+			# Move the file, suffixing with -original
+			rename ($imageStore . $uploadedFilename, $imageStore . $result['name'] . '-original.' . $extension);
 			
-			# Move the file
-			rename ($imageStore . $uploadedFilename, $imageStore . $requestedFilename);
+			# Create resized (and cropped version); the form regexp has already validated characters to ensure shell security
+			$size = "{$this->pureContentHeaderImageWidth}x{$this->pureContentHeaderImageHeight}";	// E.g. 883x292
+			$command = "convert '{$imageStore}{$result['name']}-original.jpg' -resize {$size}^ -gravity center -extent {$size} '{$imageStore}{$result['name']}.jpg'";	// Use of size^ crops to at least the box but maintaining the aspect ratio; this is then cropped with the extent
 			
 			# Refresh the page, which will show the recently-uploaded image at the top
 			$redirectTo = "{$this->currentDirectory}?headerimage=true";
