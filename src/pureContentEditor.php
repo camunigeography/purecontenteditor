@@ -123,8 +123,8 @@ class pureContentEditor
 			'enableHeaderImages' => false,			// Whether to enable the headers functionality
 			'pureContentHeaderImageStore' => '/images/headers/',	// Section image header store
 			'pureContentHeaderImageFilename' => 'header.jpg',	// Section image header filename
-			'pureContentHeaderImageWidth' => false,		// Section image header width, or false for no checking
-			'pureContentHeaderImageHeight' => false,	// Section image header height, or false for no checking
+			'pureContentHeaderImageWidth' => 883,		// Section image header width
+			'pureContentHeaderImageHeight' => 292,		// Section image header height
 			'reviewPagesOpenNewWindow' => false,	// Whether pages for review should open in a new window or not
 			'maximumFileAndFolderNameLength' => 25,	// Maximum number of characters for new files and folders
 			'contentNegotiation' => false,			// Whether to switch on content-negotiation semantics when dealing with filenames
@@ -2356,16 +2356,11 @@ class pureContentEditor
 		$currentImages = application::natsortField ($currentImages, 'time');
 		$currentImages = array_reverse ($currentImages, true);
 		
-		# Determine whether a specific size is required
-		$specificSizeRequired = ($this->pureContentHeaderImageWidth && ctype_digit ((string) $this->pureContentHeaderImageWidth) && $this->pureContentHeaderImageHeight && ctype_digit ((string) $this->pureContentHeaderImageHeight));
-		
-		# Filter for the correct size if required
-		if ($specificSizeRequired) {
-			foreach ($currentImages as $file => $attributes) {
-				list ($width, $height, $type, $imageSize) = getimagesize ($imageStore . $file);		// NB is_readable() has already been done by directories.php
-				if (($width != $this->pureContentHeaderImageWidth) || ($height != $this->pureContentHeaderImageHeight)) {
-					unset ($currentImages[$file]);
-				}
+		# Filter to show only the supported size
+		foreach ($currentImages as $file => $attributes) {
+			list ($width, $height, $type, $imageSize) = getimagesize ($imageStore . $file);		// NB is_readable() has already been done by directories.php
+			if (($width != $this->pureContentHeaderImageWidth) || ($height != $this->pureContentHeaderImageHeight)) {
+				unset ($currentImages[$file]);
 			}
 		}
 		
@@ -2408,7 +2403,7 @@ class pureContentEditor
 		$html .= "\n<p>You can select from the gallery of existing header images below, or firstly add a new image to the gallery and then select it.</p>";
 		
 		# Show an image upload form
-		$imageUploadForm = $this->imageUploadForm ($imageStore, $extension, $specificSizeRequired, array_keys ($currentImages));
+		$imageUploadForm = $this->imageUploadForm ($imageStore, $extension, array_keys ($currentImages));
 		$html .= "\n<div class=\"graybox\">" . $imageUploadForm . "\n</div>";
 		
 		# End if no images
@@ -2433,7 +2428,7 @@ class pureContentEditor
 	
 	
 	# Function to create an image upload form
-	private function imageUploadForm ($imageStore, $extension, $specificSizeRequired, $currentImages)
+	private function imageUploadForm ($imageStore, $extension, $currentImages)
 	{
 		# Start the HTML
 		$html = '';
@@ -2446,7 +2441,7 @@ class pureContentEditor
 		}
 		
 		# Describe the restrictions
-		$restrictions = "The image <strong>must</strong> have a <strong>.{$extension} extension</strong>" . ($specificSizeRequired ? " and must be exactly <strong>{$this->pureContentHeaderImageWidth}px</strong> by <strong>{$this->pureContentHeaderImageHeight}px</strong>" : '') . '.';
+		$restrictions = "The image <strong>must</strong> have a <strong>.{$extension} extension</strong> and must be exactly <strong>{$this->pureContentHeaderImageWidth}px</strong> by <strong>{$this->pureContentHeaderImageHeight}px</strong>.";
 		
 		# Create an upload form
 		$form = new form (array (
@@ -2490,14 +2485,12 @@ class pureContentEditor
 				return $html;
 			}
 			
-			# Check the size if required
-			if ($specificSizeRequired) {
-				list ($width, $height, $type, $imageSize) = getimagesize ($imageStore . $uploadedFilename);
-				if (($width != $this->pureContentHeaderImageWidth) || ($height != $this->pureContentHeaderImageHeight)) {
-					unlink ($imageStore . $uploadedFilename);
-					$html = "<p class=\"warning\">The image was the wrong size, so the one you selected has not been added. Please <a href=\"{$this->page}?headerimage\">try again</a>.</p>";
-					return $html;
-				}
+			# Check the size
+			list ($width, $height, $type, $imageSize) = getimagesize ($imageStore . $uploadedFilename);
+			if (($width != $this->pureContentHeaderImageWidth) || ($height != $this->pureContentHeaderImageHeight)) {
+				unlink ($imageStore . $uploadedFilename);
+				$html = "<p class=\"warning\">The image was the wrong size, so the one you selected has not been added. Please <a href=\"{$this->page}?headerimage\">try again</a>.</p>";
+				return $html;
 			}
 			
 			# Move the file
