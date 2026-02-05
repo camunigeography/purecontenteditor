@@ -1252,8 +1252,8 @@ class pureContentEditor
 			),
 			
 			'submenu' => array (
-				'title' => 'Section menu',
-				'tooltip' => 'Edit or create the menu for this section',
+				'title' => 'Submenu',
+				'tooltip' => 'Edit or create the submenu for this area of the site',
 				'url' => $submenuLocation . '?submenu',
 				'administratorsOnly' => false,
 				'grouping' => 'Navigation',
