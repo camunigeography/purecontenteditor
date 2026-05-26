@@ -865,13 +865,32 @@ class pureContentEditor
 			}
 			
 			# Organise the lookup users
-			$fields = array ('Forename', 'Surname', 'E-mail', 'Administrator');
+			$fields = array (
+				'Username',			// username is also supported
+				'Forename',			// forename is also supported
+				'Surname',			// surname is also supported
+				'E-mail',			// email is also supported
+				'Administrator',	// administrator is also supported
+			);
 			foreach ($this->lookup as $attributes) {
+				
+				# Add support for simplified lower-case attribute names also, e.g. email rather than E-mail
+				foreach ($fields as $field) {
+					$tryLowerCase = strtolower (str_replace ('-', '', $field));
+					if (array_key_exists ($tryLowerCase, $attributes)) {
+						$attributes[$field] = $attributes[$tryLowerCase];
+					}
+				}
+				
+				# Register the users
 				if (!isSet ($attributes['Username'])) {continue;}
 				$username = $attributes['Username'];
+				unset ($attributes['Username']);
 				foreach ($fields as $field) {
 					$lookupUsers[$username][$field] = (isSet ($attributes[$field]) ? trim ($attributes[$field]) : '');
 				}
+				
+				# Add in source
 				$lookupUsers[$username]['Source'] = 'Lookup (database)';
 			}
 		}
@@ -921,10 +940,20 @@ class pureContentEditor
 			
 			# Organise the lookup permissions
 			foreach ($this->lookup as $attributes) {
+				
+				# Add support for simplified lower-case attribute names also, e.g. email rather than E-mail
+				foreach ($this->permissionsDatabaseFields as $field) {
+					$tryLowerCase = strtolower (str_replace ('-', '', $field));
+					if (array_key_exists ($tryLowerCase, $attributes)) {
+						$attributes[$field] = $attributes[$tryLowerCase];
+					}
+				}
+				
 				if (!isSet ($attributes['Username'])) {continue;}
 				$username = $attributes['Username'];
 				$permission = array ();
 				foreach ($this->permissionsDatabaseFields as $field) {
+					if ($field == 'Key') {continue;}
 					$permission[$field] = (isSet ($attributes[$field]) ? trim ($attributes[$field]) : '');
 				}
 				$key = trim ($username) . ':' . trim ($permission['Location']);
