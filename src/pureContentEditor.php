@@ -888,7 +888,7 @@ class pureContentEditor
 			
 			# Location-independent URL handling; this is where /foo/bar.html.YYYYMMDD-hhmmss.username?action is used to derive the page itself as /foo/bar.html rather than /foo/bar.html?action=/foo/bar.html.YYYYMMDD-hhmmss.username?action
 			
-			/* E.g. for 
+			/* E.g. for
 			/foo/bar.html.20070822-155250.username?review
 			the above regexp sets $matches as:
 			Array
@@ -909,10 +909,10 @@ class pureContentEditor
 		# Otherwise use the standard, previous default behaviour
 		} else {
 			
-			# Ensure the query string is in UTF-8 if required
+			# Decode the query string
 			$queryString = $_SERVER['QUERY_STRING'];
 			if ($this->charset == 'UTF-8') {
-				$queryString = utf8_encode (urldecode ($_SERVER['QUERY_STRING']));
+				$queryString = urldecode ($_SERVER['QUERY_STRING']);
 			}
 			
 			# Get the query
