@@ -6,7 +6,9 @@ if ($_SERVER['SERVER_PORT'] != 8080) {return;}
 # Load the settings
 require_once ($_SERVER['DOCUMENT_ROOT'] . '/sitetech/purecontenteditor/.config.php');
 
-# Ensure correct port
+# Add current directory to include path, for correct vendor/
+ini_set ('include_path', __DIR__ . '/' . PATH_SEPARATOR . ini_get ('include_path'));
+
 # Load and run the application with the above settings
 require_once ('vendor/autoload.php');
 new pureContentEditor ($settings);
